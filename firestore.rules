@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: machines
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, 1-100 chars)
+    //   - theoreticalProductionPerHour: number (required, > 0)
+    //   - hourlyGoal: number (optional, >= 0)
+    //
+    // Collection: production
+    // Fields:
+    //   - id: string (required)
+    //   - machineId: string (required)
+    //   - date: string (required, YYYY-MM-DD)
+    //   - startTime: string (required, HH:mm)
+    //   - endTime: string (required, HH:mm)
+    //   - quantity: number (optional, >= 0)
+    //   - scrapQuantity: number (optional, >= 0)
+    //
+    // Collection: downtime
+    // Fields:
+    //   - id: string (required)
+    //   - machineId: string (required)
+    //   - date: string (required, YYYY-MM-DD)
+    //   - startTime: string (required, HH:mm)
+    //   - endTime: string (optional, HH:mm)
+    //   - type: string (required)
+    //   - observation: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "ciaheringgoianesia@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidMachine(data) {
+      return data.keys().hasAll(['id', 'name', 'theoreticalProductionPerHour']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.theoreticalProductionPerHour is number && data.theoreticalProductionPerHour > 0 &&
+             (!('hourlyGoal' in data) || (data.hourlyGoal is number && data.hourlyGoal >= 0));
+    }
+
+    function isValidProduction(data) {
+      return data.keys().hasAll(['id', 'machineId', 'date', 'startTime', 'endTime']) &&
+             data.id is string &&
+             data.machineId is string &&
+             data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}$") &&
+             data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}$") &&
+             (!('quantity' in data) || (data.quantity is number && data.quantity >= 0)) &&
+             (!('scrapQuantity' in data) || (data.scrapQuantity is number && data.scrapQuantity >= 0));
+    }
+
+    function isValidDowntime(data) {
+      return data.keys().hasAll(['id', 'machineId', 'date', 'startTime', 'type']) &&
+             data.id is string &&
+             data.machineId is string &&
+             data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}$") &&
+             data.type is string &&
+             (!('endTime' in data) || (data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}$"))) &&
+             (!('observation' in data) || (data.observation is string));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /machines/{machineId} {
+      allow read: if true; // Public access as requested
+      allow create: if isAdmin() && isValidMachine(request.resource.data);
+      allow update: if isAdmin() && isValidMachine(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /production/{productionId} {
+      allow read: if true; // Public access as requested
+      allow create: if isAdmin() && isValidProduction(request.resource.data);
+      allow update: if isAdmin() && isValidProduction(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /downtime/{downtimeId} {
+      allow read: if true; // Public access as requested
+      allow create: if isAdmin() && isValidDowntime(request.resource.data);
+      allow update: if isAdmin() && isValidDowntime(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

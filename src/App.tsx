@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { format, addDays, subDays, parseISO } from 'date-fns';
 import { 
   Plus, 
@@ -35,6 +35,68 @@ import {
 } from './components/Modals';
 import { cn } from './lib/utils';
 import { FileText } from 'lucide-react';
+import { 
+  db, 
+  auth, 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  OperationType, 
+  handleFirestoreError 
+} from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
+// Error Boundary Component
+class ErrorBoundary extends Component<React.PropsWithChildren<{}>, { hasError: boolean, errorInfo: string | null }> {
+  state = { hasError: false, errorInfo: null };
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, errorInfo: error.message };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let displayMessage = "Ocorreu um erro inesperado.";
+      try {
+        const parsed = JSON.parse(this.state.errorInfo || "");
+        if (parsed.error && parsed.error.includes("insufficient permissions")) {
+          displayMessage = "Você não tem permissão para realizar esta ação. Por favor, faça login como administrador.";
+        }
+      } catch (e) {
+        // Not a JSON error
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full text-center border border-slate-100">
+            <div className="bg-rose-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-rose-600" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-800 mb-4 uppercase tracking-tight">Ops! Algo deu errado</h2>
+            <p className="text-slate-600 mb-8 font-medium leading-relaxed">
+              {displayMessage}
+            </p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-brand-primary text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all"
+            >
+              Recarregar Aplicativo
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (this as any).props.children;
+  }
+}
 
 // Initial Data
 const INITIAL_MACHINES: Machine[] = [
@@ -46,36 +108,77 @@ const INITIAL_MACHINES: Machine[] = [
 ];
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   // State
-  const [machines, setMachines] = useState<Machine[]>(() => {
-    const saved = localStorage.getItem('machines');
-    return saved ? JSON.parse(saved) : INITIAL_MACHINES;
-  });
-  const [production, setProduction] = useState<ProductionRecord[]>(() => {
-    const saved = localStorage.getItem('production');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [downtime, setDowntime] = useState<DowntimeRecord[]>(() => {
-    const saved = localStorage.getItem('downtime');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [machines, setMachines] = useState<Machine[]>(INITIAL_MACHINES);
+  const [production, setProduction] = useState<ProductionRecord[]>([]);
+  const [downtime, setDowntime] = useState<DowntimeRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [currentTime, setCurrentTime] = useState(format(new Date(), 'HH:mm'));
   const [currentDashboard, setCurrentDashboard] = useState<'timeline' | 'summary' | 'comparative'>('timeline');
   
   // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('isAuthenticated') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Sync with Firebase
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setIsAuthenticated(!!user);
+      setIsAdmin(user?.email === 'ciaheringgoianesia@gmail.com');
+      setIsAuthReady(true);
+      
+      // Also check legacy login
+      if (!user && localStorage.getItem('isAuthenticated') === 'true') {
+        setIsAuthenticated(true);
+      }
+    });
+
+    const unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as Machine);
+      if (data.length > 0) {
+        setMachines(data);
+      } else {
+        setMachines(INITIAL_MACHINES);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
+
+    const unsubscribeProduction = onSnapshot(collection(db, 'production'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as ProductionRecord);
+      setProduction(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'production'));
+
+    const unsubscribeDowntime = onSnapshot(collection(db, 'downtime'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as DowntimeRecord);
+      setDowntime(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
+
+    return () => {
+      unsubscribeAuth();
+      unsubscribeMachines();
+      unsubscribeProduction();
+      unsubscribeDowntime();
+    };
+  }, []);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
     localStorage.setItem('isAuthenticated', 'true');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await auth.signOut();
     setIsAuthenticated(false);
+    setIsAdmin(false);
     localStorage.removeItem('isAuthenticated');
   };
   
@@ -96,18 +199,15 @@ export default function App() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [selectedMachineForDetail, setSelectedMachineForDetail] = useState<Machine | null>(null);
 
-  // Persistence
-  useEffect(() => {
-    localStorage.setItem('machines', JSON.stringify(machines));
-  }, [machines]);
-  useEffect(() => {
-    localStorage.setItem('production', JSON.stringify(production));
-  }, [production]);
-  useEffect(() => {
-    localStorage.setItem('downtime', JSON.stringify(downtime));
-  }, [downtime]);
+  // Data Modification Functions
+  const saveMachine = async (machine: Machine) => {
+    try {
+      await setDoc(doc(db, 'machines', machine.id), machine);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `machines/${machine.id}`);
+    }
+  };
 
-  // Actions
   const addMachine = (name: string, theoretical: number, hourlyGoal: number) => {
     const newMachine: Machine = { 
       id: crypto.randomUUID(), 
@@ -115,34 +215,57 @@ export default function App() {
       theoreticalProductionPerHour: theoretical,
       hourlyGoal
     };
-    setMachines([...machines, newMachine]);
+    saveMachine(newMachine);
   };
 
   const updateMachine = (id: string, data: Partial<Machine>) => {
-    setMachines(machines.map(m => m.id === id ? { ...m, ...data } : m));
-  };
-
-  const deleteMachine = (id: string) => {
-    if (confirm(`Excluir ${machines.find(m => m.id === id)?.name}?`)) {
-      setMachines(machines.filter(m => m.id !== id));
-      setProduction(production.filter(p => p.machineId !== id));
-      setDowntime(downtime.filter(d => d.machineId !== id));
+    const machine = machines.find(m => m.id === id);
+    if (machine) {
+      saveMachine({ ...machine, ...data });
     }
   };
 
-  const saveProduction = (data: Omit<ProductionRecord, 'id'>, id?: string) => {
-    if (id) {
-      setProduction(production.map(p => p.id === id ? { ...p, ...data } : p));
-    } else {
-      setProduction([...production, { ...data, id: crypto.randomUUID() }]);
+  const deleteMachine = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'machines', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `machines/${id}`);
     }
   };
 
-  const saveDowntime = (data: Omit<DowntimeRecord, 'id'>, id?: string) => {
-    if (id) {
-      setDowntime(downtime.map(d => d.id === id ? { ...d, ...data } : d));
-    } else {
-      setDowntime([...downtime, { ...data, id: crypto.randomUUID() }]);
+  const saveProduction = async (data: Omit<ProductionRecord, 'id'>, id?: string) => {
+    try {
+      const recordId = id || Math.random().toString(36).substr(2, 9);
+      const record = { ...data, id: recordId };
+      await setDoc(doc(db, 'production', recordId), record);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `production/${id || 'new'}`);
+    }
+  };
+
+  const deleteProduction = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'production', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `production/${id}`);
+    }
+  };
+
+  const saveDowntime = async (data: Omit<DowntimeRecord, 'id'>, id?: string) => {
+    try {
+      const recordId = id || Math.random().toString(36).substr(2, 9);
+      const record = { ...data, id: recordId };
+      await setDoc(doc(db, 'downtime', recordId), record);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `downtime/${id || 'new'}`);
+    }
+  };
+
+  const deleteDowntime = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'downtime', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `downtime/${id}`);
     }
   };
 
@@ -168,28 +291,40 @@ export default function App() {
 
   const deleteRecord = (type: 'production' | 'downtime', id: string) => {
     if (type === 'production') {
-      setProduction(production.filter(p => p.id !== id));
+      deleteProduction(id);
     } else {
-      setDowntime(downtime.filter(d => d.id !== id));
+      deleteDowntime(id);
     }
   };
 
-  const copyPreviousDay = () => {
+  const copyPreviousDay = async () => {
     const prevDate = format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd');
     const prevProd = production.filter(p => p.date === prevDate);
     const prevDown = downtime.filter(d => d.date === prevDate);
 
     if (prevProd.length === 0 && prevDown.length === 0) {
-      alert('Nenhum dado encontrado no dia anterior.');
       return;
     }
 
-    const newProd = prevProd.map(p => ({ ...p, id: crypto.randomUUID(), date: selectedDate }));
-    const newDown = prevDown.map(d => ({ ...d, id: crypto.randomUUID(), date: selectedDate }));
+    for (const p of prevProd) {
+      await saveProduction({ ...p, date: selectedDate });
+    }
 
-    setProduction([...production, ...newProd]);
-    setDowntime([...downtime, ...newDown]);
+    for (const d of prevDown) {
+      await saveDowntime({ ...d, date: selectedDate });
+    }
   };
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-500 font-medium">Carregando...</p>
+        </div>
+      </div>
+    );
+  }
 
   const exportCSV = () => {
     const rows = [

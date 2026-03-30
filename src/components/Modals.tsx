@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock } from 'lucide-react';
+import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome } from 'lucide-react';
+import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Machine, ProductionRecord, DowntimeRecord, MachineStats } from '../types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
@@ -40,6 +41,7 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,53 +53,87 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+      onClose();
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError('Erro ao fazer login com Google. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
         <Modal title="Acesso Restrito" onClose={onClose}>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex justify-center mb-6">
+          <div className="space-y-6">
+            <div className="flex justify-center">
               <div className="bg-slate-100 p-4 rounded-full">
                 <Lock className="w-8 h-8 text-slate-400" />
               </div>
             </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Usuário</label>
-              <input 
-                type="text" 
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
-                placeholder="Ex: nome.sobrenome"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Senha</label>
-              <input 
-                type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            {error && (
-              <p className="text-xs font-bold text-rose-500 text-center">{error}</p>
-            )}
 
             <button 
-              type="submit"
-              className="w-full py-4 bg-brand-primary text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+              onClick={handleGoogleLogin}
+              disabled={isLoading}
+              className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              <LogIn className="w-5 h-5" />
-              Entrar
+              <Chrome className="w-5 h-5 text-blue-500" />
+              {isLoading ? 'Conectando...' : 'Entrar com Google'}
             </button>
-          </form>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200"></div>
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-2 text-slate-400 font-bold">Ou acesso legado</span>
+              </div>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Usuário</label>
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Ex: nome.sobrenome"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Senha</label>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              {error && (
+                <p className="text-xs font-bold text-rose-500 text-center">{error}</p>
+              )}
+
+              <button 
+                type="submit"
+                className="w-full py-4 bg-brand-primary text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-5 h-5" />
+                Entrar
+              </button>
+            </form>
+          </div>
         </Modal>
       )}
     </AnimatePresence>

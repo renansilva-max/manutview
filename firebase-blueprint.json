@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "Machine": {
+      "title": "Machine",
+      "description": "Industrial machine configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "theoreticalProductionPerHour": { "type": "number" },
+        "hourlyGoal": { "type": "number" }
+      },
+      "required": ["id", "name", "theoreticalProductionPerHour"]
+    },
+    "ProductionRecord": {
+      "title": "ProductionRecord",
+      "description": "Record of production for a machine",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "machineId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "quantity": { "type": "number" },
+        "scrapQuantity": { "type": "number" }
+      },
+      "required": ["id", "machineId", "date", "startTime", "endTime"]
+    },
+    "DowntimeRecord": {
+      "title": "DowntimeRecord",
+      "description": "Record of downtime for a machine",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "machineId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "type": { "type": "string" },
+        "observation": { "type": "string" }
+      },
+      "required": ["id", "machineId", "date", "startTime"]
+    }
+  },
+  "firestore": {
+    "/machines/{machineId}": {
+      "schema": "Machine",
+      "description": "Collection of industrial machines"
+    },
+    "/production/{productionId}": {
+      "schema": "ProductionRecord",
+      "description": "Collection of production records"
+    },
+    "/downtime/{downtimeId}": {
+      "schema": "DowntimeRecord",
+      "description": "Collection of downtime records"
+    }
+  }
+}
