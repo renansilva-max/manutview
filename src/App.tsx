@@ -130,7 +130,7 @@ function AppContent() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  // Sync with Firebase
+  // Auth Sync
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setIsAuthenticated(!!user);
@@ -143,12 +143,25 @@ function AppContent() {
       }
     });
 
+    return () => unsubscribeAuth();
+  }, []);
+
+  // Data Sync
+  useEffect(() => {
     const unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Machine);
       if (data.length > 0) {
         setMachines(data);
       } else {
         setMachines(INITIAL_MACHINES);
+        // If admin is logged in and no machines exist, we could auto-save them
+        if (isAdmin) {
+          INITIAL_MACHINES.forEach(m => {
+            setDoc(doc(db, 'machines', m.id), m).catch(error => 
+              handleFirestoreError(error, OperationType.WRITE, `machines/${m.id}`)
+            );
+          });
+        }
       }
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
 
@@ -163,12 +176,11 @@ function AppContent() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
 
     return () => {
-      unsubscribeAuth();
       unsubscribeMachines();
       unsubscribeProduction();
       unsubscribeDowntime();
     };
-  }, []);
+  }, [isAdmin]);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -201,6 +213,10 @@ function AppContent() {
 
   // Data Modification Functions
   const saveMachine = async (machine: Machine) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador pode salvar alterações no banco de dados.");
+      return;
+    }
     try {
       await setDoc(doc(db, 'machines', machine.id), machine);
     } catch (error) {
@@ -208,24 +224,28 @@ function AppContent() {
     }
   };
 
-  const addMachine = (name: string, theoretical: number, hourlyGoal: number) => {
+  const addMachine = async (name: string, theoretical: number, hourlyGoal: number) => {
     const newMachine: Machine = { 
       id: crypto.randomUUID(), 
       name,
       theoreticalProductionPerHour: theoretical,
       hourlyGoal
     };
-    saveMachine(newMachine);
+    await saveMachine(newMachine);
   };
 
-  const updateMachine = (id: string, data: Partial<Machine>) => {
+  const updateMachine = async (id: string, data: Partial<Machine>) => {
     const machine = machines.find(m => m.id === id);
     if (machine) {
-      saveMachine({ ...machine, ...data });
+      await saveMachine({ ...machine, ...data });
     }
   };
 
   const deleteMachine = async (id: string) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador pode excluir dados.");
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'machines', id));
     } catch (error) {
@@ -234,6 +254,10 @@ function AppContent() {
   };
 
   const saveProduction = async (data: Omit<ProductionRecord, 'id'>, id?: string) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador logado com Google pode salvar dados na nuvem.");
+      throw new Error("Unauthorized");
+    }
     try {
       const recordId = id || Math.random().toString(36).substr(2, 9);
       const record = { ...data, id: recordId };
@@ -244,6 +268,10 @@ function AppContent() {
   };
 
   const deleteProduction = async (id: string) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador pode excluir dados.");
+      throw new Error("Unauthorized");
+    }
     try {
       await deleteDoc(doc(db, 'production', id));
     } catch (error) {
@@ -252,6 +280,10 @@ function AppContent() {
   };
 
   const saveDowntime = async (data: Omit<DowntimeRecord, 'id'>, id?: string) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador logado com Google pode salvar dados na nuvem.");
+      throw new Error("Unauthorized");
+    }
     try {
       const recordId = id || Math.random().toString(36).substr(2, 9);
       const record = { ...data, id: recordId };
@@ -262,6 +294,10 @@ function AppContent() {
   };
 
   const deleteDowntime = async (id: string) => {
+    if (!isAdmin) {
+      alert("Apenas o administrador pode excluir dados.");
+      throw new Error("Unauthorized");
+    }
     try {
       await deleteDoc(doc(db, 'downtime', id));
     } catch (error) {

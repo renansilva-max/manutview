@@ -78,6 +78,11 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
               </div>
             </div>
 
+            <div className="text-center space-y-2">
+              <h3 className="font-bold text-slate-800">Login com Google</h3>
+              <p className="text-xs text-slate-500">Obrigatório para salvar dados na nuvem e sincronizar entre dispositivos.</p>
+            </div>
+
             <button 
               onClick={handleGoogleLogin}
               disabled={isLoading}
@@ -96,6 +101,12 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
               </div>
             </div>
             
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+              <p className="text-[10px] text-amber-700 font-medium leading-tight">
+                <strong>Aviso:</strong> O acesso legado permite apenas visualização e testes locais. Alterações não serão salvas no banco de dados compartilhado.
+              </p>
+            </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Usuário</label>
@@ -144,6 +155,7 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
   const [newName, setNewName] = useState('');
   const [newTheoretical, setNewTheoretical] = useState('100');
   const [newGoal, setNewGoal] = useState('80');
+  const [isLoading, setIsLoading] = useState(false);
 
   return (
     <AnimatePresence>
@@ -162,17 +174,25 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
                 className="flex-1 px-4 py-2 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
               />
               <button 
-                onClick={() => {
+                onClick={async () => {
                   if (newName) {
-                    onAdd(newName, parseInt(newTheoretical) || 100, parseInt(newGoal) || 80);
-                    setNewName('');
-                    setNewTheoretical('100');
-                    setNewGoal('80');
+                    setIsLoading(true);
+                    try {
+                      await onAdd(newName, parseInt(newTheoretical) || 100, parseInt(newGoal) || 80);
+                      setNewName('');
+                      setNewTheoretical('100');
+                      setNewGoal('80');
+                    } catch (error) {
+                      console.error("Error adding machine:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
                   }
                 }}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold"
+                disabled={isLoading}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50"
               >
-                Add
+                {isLoading ? '...' : 'Add'}
               </button>
             </div>
             <div className="flex gap-2">
@@ -210,8 +230,18 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
                   className="bg-transparent border-none font-bold text-slate-700 focus:ring-0 p-0 text-sm"
                 />
                 <button 
-                  onClick={() => onDelete(m.id)}
-                  className="p-2 text-rose-500 opacity-0 group-hover:opacity-100 hover:bg-rose-50 rounded-lg transition-all"
+                  onClick={async () => {
+                    setIsLoading(true);
+                    try {
+                      await onDelete(m.id);
+                    } catch (error) {
+                      console.error("Error deleting machine:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="p-2 text-rose-500 opacity-0 group-hover:opacity-100 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -252,18 +282,26 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
   const [endTime, setEndTime] = useState(editingData?.endTime || '18:00');
   const [quantity, setQuantity] = useState(editingData?.quantity?.toString() || '');
   const [scrapQuantity, setScrapQuantity] = useState(editingData?.scrapQuantity?.toString() || '0');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!machineId) return;
-    onSave({
-      machineId,
-      date,
-      startTime,
-      endTime,
-      quantity: quantity ? parseInt(quantity) : undefined,
-      scrapQuantity: scrapQuantity ? parseInt(scrapQuantity) : 0
-    }, editingData?.id);
-    onClose();
+    setIsLoading(true);
+    try {
+      await onSave({
+        machineId,
+        date,
+        startTime,
+        endTime,
+        quantity: quantity ? parseInt(quantity) : undefined,
+        scrapQuantity: scrapQuantity ? parseInt(scrapQuantity) : 0
+      }, editingData?.id);
+      onClose();
+    } catch (error) {
+      console.error("Error saving production:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -326,20 +364,31 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
             <div className="flex gap-3 pt-4">
               {editingData && (
                 <button 
-                  onClick={() => {
-                    onDelete(editingData.id);
-                    onClose();
+                  onClick={async () => {
+                    setIsLoading(true);
+                    try {
+                      await onDelete(editingData.id);
+                      onClose();
+                    } catch (error) {
+                      console.error("Error deleting production:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
                   }}
-                  className="flex-1 py-3 bg-slate-100 text-rose-600 rounded-xl font-bold hover:bg-rose-50 transition-colors"
+                  disabled={isLoading}
+                  className="flex-1 py-3 bg-slate-100 text-rose-600 rounded-xl font-bold hover:bg-rose-50 transition-colors disabled:opacity-50"
                 >
                   Excluir
                 </button>
               )}
               <button 
                 onClick={handleSave}
-                className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all"
+                disabled={isLoading}
+                className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Salvar
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : 'Salvar'}
               </button>
             </div>
           </div>
@@ -355,18 +404,26 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
   const [endTime, setEndTime] = useState(editingData?.endTime || '');
   const [type, setType] = useState(editingData?.type || 'Mecânica');
   const [observation, setObservation] = useState(editingData?.observation || '');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!machineId) return;
-    onSave({
-      machineId,
-      date,
-      startTime,
-      endTime: endTime || undefined,
-      type,
-      observation
-    }, editingData?.id);
-    onClose();
+    setIsLoading(true);
+    try {
+      await onSave({
+        machineId,
+        date,
+        startTime,
+        endTime: endTime || undefined,
+        type,
+        observation
+      }, editingData?.id);
+      onClose();
+    } catch (error) {
+      console.error("Error saving downtime:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -429,20 +486,31 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
             <div className="flex gap-3 pt-4">
               {editingData && (
                 <button 
-                  onClick={() => {
-                    onDelete(editingData.id);
-                    onClose();
+                  onClick={async () => {
+                    setIsLoading(true);
+                    try {
+                      await onDelete(editingData.id);
+                      onClose();
+                    } catch (error) {
+                      console.error("Error deleting downtime:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
                   }}
-                  className="flex-1 py-3 bg-slate-100 text-rose-600 rounded-xl font-bold hover:bg-rose-50 transition-colors"
+                  disabled={isLoading}
+                  className="flex-1 py-3 bg-slate-100 text-rose-600 rounded-xl font-bold hover:bg-rose-50 transition-colors disabled:opacity-50"
                 >
                   Excluir
                 </button>
               )}
               <button 
                 onClick={handleSave}
-                className="flex-[2] py-3 bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all"
+                disabled={isLoading}
+                className="flex-[2] py-3 bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Salvar
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : 'Salvar'}
               </button>
             </div>
           </div>
