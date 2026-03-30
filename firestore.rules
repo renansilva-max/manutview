@@ -44,7 +44,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (request.auth.token.email == "ciaheringgoianesia@gmail.com" && request.auth.token.email_verified == true);
+        ((request.auth.token.email == "ciaheringgoianesia@gmail.com" || request.auth.token.email == "renan.silva@ciahering.com.br") && request.auth.token.email_verified == true);
     }
 
     function isValidMachine(data) {

@@ -133,14 +133,13 @@ function AppContent() {
   // Auth Sync
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setIsAuthenticated(!!user);
-      setIsAdmin(user?.email === 'ciaheringgoianesia@gmail.com');
-      setIsAuthReady(true);
+      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+      const isGoogleAdmin = !!(user && allowedEmails.includes(user.email || '') && user.emailVerified);
+      const isLegacyAdmin = localStorage.getItem('isAuthenticated') === 'true' && localStorage.getItem('legacyUser') === 'renan.silva';
       
-      // Also check legacy login
-      if (!user && localStorage.getItem('isAuthenticated') === 'true') {
-        setIsAuthenticated(true);
-      }
+      setIsAuthenticated(!!user || (localStorage.getItem('isAuthenticated') === 'true'));
+      setIsAdmin(isGoogleAdmin || isLegacyAdmin);
+      setIsAuthReady(true);
     });
 
     return () => unsubscribeAuth();
@@ -182,9 +181,13 @@ function AppContent() {
     };
   }, [isAdmin]);
 
-  const handleLogin = () => {
+  const handleLogin = (username: string) => {
     setIsAuthenticated(true);
     localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('legacyUser', username);
+    if (username === 'renan.silva') {
+      setIsAdmin(true);
+    }
   };
 
   const handleLogout = async () => {
@@ -192,6 +195,7 @@ function AppContent() {
     setIsAuthenticated(false);
     setIsAdmin(false);
     localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('legacyUser');
   };
   
   // Update current time every minute

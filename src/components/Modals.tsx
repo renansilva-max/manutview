@@ -46,7 +46,7 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (username === 'renan.silva' && password === 'Filigrana123') {
-      onLogin();
+      onLogin(username);
       onClose();
     } else {
       setError('Usuário ou senha incorretos');
@@ -56,12 +56,22 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError('');
+    console.log('Starting Google login...');
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      console.log('Login successful:', result.user.email);
       onClose();
     } catch (err: any) {
       console.error('Login error:', err);
-      setError('Erro ao fazer login com Google. Tente novamente.');
+      if (err.code === 'auth/popup-blocked') {
+        setError('O pop-up foi bloqueado pelo seu navegador. Por favor, permita pop-ups para este site.');
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError('O login foi cancelado ou o pop-up foi fechado antes de completar.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError('Este domínio não está autorizado para login. Verifique as configurações do Firebase.');
+      } else {
+        setError(`Erro ao fazer login: ${err.message || 'Tente novamente.'}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -83,14 +93,28 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
               <p className="text-xs text-slate-500">Obrigatório para salvar dados na nuvem e sincronizar entre dispositivos.</p>
             </div>
 
-            <button 
-              onClick={handleGoogleLogin}
-              disabled={isLoading}
-              className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-            >
-              <Chrome className="w-5 h-5 text-blue-500" />
-              {isLoading ? 'Conectando...' : 'Entrar com Google'}
-            </button>
+            <div className="space-y-3">
+              <button 
+                onClick={handleGoogleLogin}
+                disabled={isLoading}
+                className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                <Chrome className="w-5 h-5 text-blue-500" />
+                {isLoading ? 'Conectando...' : 'Entrar com Google'}
+              </button>
+              
+              {isLoading && (
+                <p className="text-[10px] text-slate-400 text-center animate-pulse">
+                  Verifique se uma janela de login abriu no seu navegador.
+                </p>
+              )}
+            </div>
+
+            {error && (
+              <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                <p className="text-xs font-bold text-rose-500 text-center">{error}</p>
+              </div>
+            )}
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
@@ -131,10 +155,6 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
                   required
                 />
               </div>
-
-              {error && (
-                <p className="text-xs font-bold text-rose-500 text-center">{error}</p>
-              )}
 
               <button 
                 type="submit"
