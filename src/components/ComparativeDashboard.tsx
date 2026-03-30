@@ -8,7 +8,8 @@ import {
   Tooltip, 
   ResponsiveContainer, 
   Cell,
-  Legend
+  Legend,
+  LabelList
 } from 'recharts';
 import { 
   Machine, 
@@ -16,7 +17,9 @@ import {
   DowntimeRecord 
 } from '../types';
 import { 
-  calculateStats 
+  calculateStats,
+  getTimelineSegments,
+  minutesToTime
 } from '../utils';
 import { cn } from '../lib/utils';
 
@@ -50,9 +53,38 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
         operacional: Math.round(stats.totalOperationalMinutes / 60 * 10) / 10,
         manutencao: Math.round(stats.totalDowntimeMinutes / 60 * 10) / 10,
         prodHora: Math.round(stats.productionPerHour * 10) / 10,
+        metaHora: m.hourlyGoal || 0,
         status: downtime.some(d => d.machineId === m.id && d.date === selectedDate && !d.endTime) ? 'Manutenção' : 'Operacional'
       };
     });
+  }, [machines, selectedDate, production, downtime, currentTime]);
+
+  const chronologicalData = useMemo(() => {
+    return machines.map(m => {
+      const machineProduction = production.filter(p => p.machineId === m.id && p.date === selectedDate);
+      const machineDowntime = downtime.filter(d => d.machineId === m.id && d.date === selectedDate);
+      const segments = getTimelineSegments(selectedDate, machineProduction, machineDowntime, currentTime);
+      
+      const result: any = { name: m.name };
+      segments.forEach((seg, idx) => {
+        const key = `seg_${idx}`;
+        result[key] = seg.durationMinutes;
+        result[`${key}_type`] = seg.type;
+        result[`${key}_time`] = minutesToTime(seg.durationMinutes);
+      });
+      return result;
+    });
+  }, [machines, selectedDate, production, downtime, currentTime]);
+
+  const maxSegments = useMemo(() => {
+    let max = 0;
+    machines.forEach(m => {
+      const machineProduction = production.filter(p => p.machineId === m.id && p.date === selectedDate);
+      const machineDowntime = downtime.filter(d => d.machineId === m.id && d.date === selectedDate);
+      const segments = getTimelineSegments(selectedDate, machineProduction, machineDowntime, currentTime);
+      if (segments.length > max) max = segments.length;
+    });
+    return max;
   }, [machines, selectedDate, production, downtime, currentTime]);
 
   return (
@@ -94,6 +126,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                   {data.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.status === 'Manutenção' ? '#f43f5e' : '#10b981'} />
                   ))}
+                  <LabelList dataKey="producao" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -113,30 +146,87 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                 />
-                <Bar dataKey="prodHora" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Legend verticalAlign="top" height={36}/>
+                <Bar name="Produzido" dataKey="prodHora" fill="#f43f5e" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="prodHora" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#f43f5e' }} />
+                </Bar>
+                <Bar name="Meta" dataKey="metaHora" fill="#10b981" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="metaHora" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#10b981' }} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Tempo Operacional vs Manutenção */}
+        {/* Tempo em Horas (Operação vs Manutenção) - Cronológico */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2">
-          <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-6">Tempo em Horas (Operação vs Manutenção)</h3>
+          <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-6">Tempo em Horas (Operação vs Manutenção) - Cronológico</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical">
+              <BarChart data={chronologicalData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
+                <XAxis 
+                  type="number" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }}
+                  tickFormatter={(val) => minutesToTime(val)}
+                  domain={[0, 660]} // 11 hours (07:00 to 18:00)
+                />
                 <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: any, name: string, props: any) => {
+                    const idx = name.split('_')[1];
+                    const type = props.payload[`seg_${idx}_type`];
+                    const label = type === 'production' ? 'Operação' : type === 'downtime' ? 'Manutenção' : 'Vazio';
+                    return [minutesToTime(value), label];
+                  }}
                 />
-                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '12px', fontWeight: 600 }} />
-                <Bar name="Operação (h)" dataKey="operacional" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar name="Manutenção (h)" dataKey="manutencao" stackId="a" fill="#f43f5e" radius={[0, 4, 4, 0]} />
+                {Array.from({ length: maxSegments }).map((_, idx) => (
+                  <Bar 
+                    key={idx} 
+                    dataKey={`seg_${idx}`} 
+                    stackId="a" 
+                    isAnimationActive={false}
+                  >
+                    {chronologicalData.map((entry, index) => {
+                      const type = entry[`seg_${idx}_type`];
+                      return (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={type === 'production' ? '#10b981' : type === 'downtime' ? '#f43f5e' : '#f1f5f9'} 
+                        />
+                      );
+                    })}
+                    {/* Only show label if segment is large enough */}
+                    <LabelList 
+                      dataKey={`seg_${idx}`} 
+                      position="center" 
+                      style={{ fontSize: 9, fontWeight: 700, fill: '#fff', pointerEvents: 'none' }}
+                      formatter={(val: number) => {
+                        return val > 30 ? minutesToTime(val) : '';
+                      }}
+                    />
+                  </Bar>
+                ))}
               </BarChart>
             </ResponsiveContainer>
+          </div>
+          <div className="mt-4 flex justify-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-emerald-500 rounded-full" />
+              <span className="text-xs font-bold text-slate-600">Operação</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-rose-500 rounded-full" />
+              <span className="text-xs font-bold text-slate-600">Manutenção</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-slate-200 rounded-full" />
+              <span className="text-xs font-bold text-slate-600">Vazio</span>
+            </div>
           </div>
         </div>
       </div>

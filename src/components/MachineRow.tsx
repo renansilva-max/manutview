@@ -99,14 +99,18 @@ export const MachineRow: React.FC<MachineRowProps> = ({
             </div>
           </div>
           
-          <div className="grid grid-cols-4 md:grid-cols-3 gap-x-2 gap-y-0">
+          <div className="grid grid-cols-4 md:grid-cols-4 gap-x-2 gap-y-0">
             <div className="flex flex-col md:flex-row md:justify-between text-[9px] leading-tight">
               <span className="text-slate-400 font-medium">Prod:</span>
               <span className="text-slate-700 font-bold">{stats.totalProduction}</span>
             </div>
             <div className="flex flex-col md:flex-row md:justify-between text-[9px] leading-tight">
-              <span className="text-slate-400 font-medium">Meta:</span>
+              <span className="text-slate-400 font-medium">Meta/hora:</span>
               <span className="text-slate-700 font-bold">{machine.hourlyGoal || 0}</span>
+            </div>
+            <div className="flex flex-col md:flex-row md:justify-between text-[9px] leading-tight">
+              <span className="text-slate-400 font-medium">Prod/hora:</span>
+              <span className="text-slate-700 font-bold">{stats.productionPerHour.toFixed(1)}</span>
             </div>
             <div className="flex flex-col md:flex-row md:justify-between text-[9px] leading-tight">
               <span className="text-slate-400 font-medium">Perf:</span>
