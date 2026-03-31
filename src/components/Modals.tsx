@@ -304,7 +304,7 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
                     }
                   }}
                   disabled={isLoading}
-                  className="p-2 text-rose-500 opacity-0 group-hover:opacity-100 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-50"
+                  className="p-2 text-rose-500 opacity-100 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-50"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -653,7 +653,7 @@ export function MachineDetailModal({
                         isAuthenticated && "cursor-pointer"
                       )} onClick={() => isAuthenticated && setIsEditingGoal(true)}>
                         <span className="text-sm font-black text-emerald-600">{machine.hourlyGoal || 0}</span>
-                        {isAuthenticated && <Edit2 className="w-3 h-3 text-slate-300 group-hover:text-emerald-500 transition-colors" />}
+                        {isAuthenticated && <Edit2 className="w-3 h-3 text-emerald-500 transition-colors" />}
                       </div>
                     )}
                   </div>
@@ -696,13 +696,13 @@ export function MachineDetailModal({
                         <div className="flex gap-2">
                           <button 
                             onClick={() => onEditProduction(p)}
-                            className="p-2 bg-white text-slate-400 hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            className="p-2 bg-white text-slate-500 hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => onDeleteProduction(p.id)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -729,13 +729,13 @@ export function MachineDetailModal({
                         <div className="flex gap-2">
                           <button 
                             onClick={() => onEditDowntime(d)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => onDeleteDowntime(d.id)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

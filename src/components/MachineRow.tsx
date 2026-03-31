@@ -158,7 +158,7 @@ export const MachineRow: React.FC<MachineRowProps> = ({
                   style={{ width: `${width}%`, minWidth: width > 0 ? '2px' : '0' }}
                 >
                   {seg.type !== 'empty' && (
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/10">
+                    <div className="absolute inset-0 flex items-center justify-center opacity-100 transition-opacity bg-black/10">
                       <Edit2 className="w-3 h-3 text-white" />
                     </div>
                   )}
