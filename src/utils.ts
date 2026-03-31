@@ -1,8 +1,8 @@
 import { format } from 'date-fns';
 import { ProductionRecord, DowntimeRecord, TimelineSegment, Machine, MachineStats } from './types';
 
-export const DAY_START = '07:00';
-export const DAY_END = '18:00';
+export const DAY_START = '05:00';
+export const DAY_END = '23:00';
 
 export function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);

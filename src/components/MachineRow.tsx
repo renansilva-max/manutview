@@ -143,7 +143,7 @@ export const MachineRow: React.FC<MachineRowProps> = ({
               const width = (seg.durationMinutes / (timeToMinutes(DAY_END) - timeToMinutes(DAY_START))) * 100;
               return (
                 <button
-                  key={seg.id + idx}
+                  key={`${seg.id}-${idx}`}
                   onClick={() => {
                     if (seg.type !== 'empty' && seg.record) {
                       onEditRecord(seg.type, seg.record);

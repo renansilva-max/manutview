@@ -1,21 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome } from 'lucide-react';
 import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Machine, ProductionRecord, DowntimeRecord, MachineStats } from '../types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
-import { calculateStats } from '../utils';
+import { calculateStats, DAY_START, DAY_END } from '../utils';
 import { cn } from '../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export function Modal({ title, onClose, children, maxWidth = "max-w-md" }: { title: string, onClose: () => void, children: React.ReactNode, maxWidth?: string }) {
+export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex = "z-50" }: { title: string, onClose: () => void, children: React.ReactNode, maxWidth?: string, zIndex?: string }) {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+      className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm`}
     >
       <motion.div 
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -34,6 +34,52 @@ export function Modal({ title, onClose, children, maxWidth = "max-w-md" }: { tit
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+export function SettingsModal({ isOpen, onClose, onManageMachines, onDownloadExcel, isAuthenticated }: any) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <Modal title="Configurações" onClose={onClose}>
+          <div className="space-y-4">
+            {isAuthenticated && (
+              <button
+                onClick={() => {
+                  onManageMachines();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
+              >
+                <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                  <Settings className="w-6 h-6 text-slate-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800">Gerenciar Máquinas</h3>
+                  <p className="text-xs text-slate-500">Adicionar, editar ou excluir máquinas do sistema.</p>
+                </div>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                onDownloadExcel();
+                onClose();
+              }}
+              className="w-full flex items-center gap-4 p-4 bg-emerald-50 hover:bg-emerald-100 rounded-2xl transition-all group text-left"
+            >
+              <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                <Download className="w-6 h-6 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-emerald-800">Exportar para Excel</h3>
+                <p className="text-xs text-emerald-600/70">Baixar todos os dados de produção e paradas em formato .xlsx</p>
+              </div>
+            </button>
+          </div>
+        </Modal>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -78,10 +124,9 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title="Acesso Restrito" onClose={onClose}>
-          <div className="space-y-6">
+    isOpen && (
+      <Modal title="Acesso Restrito" onClose={onClose}>
+        <div className="space-y-6">
             <div className="flex justify-center">
               <div className="bg-slate-100 p-4 rounded-full">
                 <Lock className="w-8 h-8 text-slate-400" />
@@ -166,8 +211,7 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
             </form>
           </div>
         </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }
 
@@ -178,10 +222,9 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
   const [isLoading, setIsLoading] = useState(false);
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title="Gerenciar Máquinas" onClose={onClose}>
-      <div className="space-y-4">
+    isOpen && (
+      <Modal title="Gerenciar Máquinas" onClose={onClose}>
+        <div className="space-y-4">
         <div className="space-y-2">
           <label className="block text-xs font-bold text-slate-400 uppercase">Nova Máquina</label>
           <div className="flex flex-col gap-2">
@@ -240,8 +283,8 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
           </div>
         </div>
         <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-          {machines.map((m: Machine) => (
-            <div key={m.id} className="flex flex-col p-3 bg-slate-50 rounded-xl group gap-2">
+          {machines.map((m: Machine, idx: number) => (
+            <div key={`mgmt-machine-${m.id}-${idx}`} className="flex flex-col p-3 bg-slate-50 rounded-xl group gap-2">
               <div className="flex items-center justify-between">
                 <input 
                   type="text" 
@@ -291,15 +334,14 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
         </div>
       </div>
     </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }
 
 export function ProductionModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete }: any) {
   const [machineId, setMachineId] = useState(editingData?.machineId || machines[0]?.id || '');
-  const [startTime, setStartTime] = useState(editingData?.startTime || '07:00');
-  const [endTime, setEndTime] = useState(editingData?.endTime || '18:00');
+  const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
+  const [endTime, setEndTime] = useState(editingData?.endTime || DAY_END);
   const [quantity, setQuantity] = useState(editingData?.quantity?.toString() || '');
   const [scrapQuantity, setScrapQuantity] = useState(editingData?.scrapQuantity?.toString() || '0');
   const [isLoading, setIsLoading] = useState(false);
@@ -325,10 +367,9 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title={editingData ? "Editar Produção" : "Registrar Produção"} onClose={onClose}>
-          <div className="space-y-4">
+    isOpen && (
+      <Modal title={editingData ? "Editar Produção" : "Registrar Produção"} onClose={onClose} zIndex="z-[60]">
+        <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Máquina</label>
               <select 
@@ -336,7 +377,7 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
               >
-                {machines.map((m: Machine) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -413,14 +454,13 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
             </div>
           </div>
         </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }
 
 export function DowntimeModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete }: any) {
   const [machineId, setMachineId] = useState(editingData?.machineId || machines[0]?.id || '');
-  const [startTime, setStartTime] = useState(editingData?.startTime || '07:00');
+  const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
   const [endTime, setEndTime] = useState(editingData?.endTime || '');
   const [type, setType] = useState(editingData?.type || 'Mecânica');
   const [observation, setObservation] = useState(editingData?.observation || '');
@@ -447,10 +487,9 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title={editingData ? "Editar Parada" : "Registrar Parada"} onClose={onClose}>
-          <div className="space-y-4">
+    isOpen && (
+      <Modal title={editingData ? "Editar Parada" : "Registrar Parada"} onClose={onClose} zIndex="z-[60]">
+        <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Máquina</label>
               <select 
@@ -458,7 +497,7 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-rose-500"
               >
-                {machines.map((m: Machine) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -535,8 +574,7 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
             </div>
           </div>
         </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }
 
@@ -545,6 +583,7 @@ export function MachineDetailModal({
   machine, 
   production, 
   downtime, 
+  date,
   onClose, 
   onEditProduction, 
   onDeleteProduction, 
@@ -559,12 +598,17 @@ export function MachineDetailModal({
 
   if (!machine) return null;
 
-  const machineProd = production
-    .filter((p: any) => p.machineId === machine.id)
-    .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-  const machineDown = downtime
-    .filter((d: any) => d.machineId === machine.id)
-    .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
+  const machineProd = useMemo(() => production
+    .filter((p: any) => p.machineId === machine.id && p.date === date)
+    .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)),
+    [production, machine.id, date]
+  );
+
+  const machineDown = useMemo(() => downtime
+    .filter((d: any) => d.machineId === machine.id && d.date === date)
+    .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)),
+    [downtime, machine.id, date]
+  );
 
   const handleSaveGoal = () => {
     onUpdateMachine(machine.id, { hourlyGoal: parseInt(tempGoal) || 0 });
@@ -572,10 +616,9 @@ export function MachineDetailModal({
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title={`Detalhes: ${machine.name}`} onClose={onClose} maxWidth="max-w-2xl">
-          <div className="flex flex-col h-full">
+    isOpen && (
+      <Modal title={`Detalhes: ${machine.name}`} onClose={onClose} maxWidth="max-w-2xl">
+        <div className="flex flex-col h-full">
             {/* Machine Summary & Goal Section */}
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
               <div className="flex items-center justify-between mb-4">
@@ -637,8 +680,8 @@ export function MachineDetailModal({
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 max-h-[50vh]">
               {activeTab === 'producao' ? (
                 machineProd.length > 0 ? (
-                  machineProd.map((p: ProductionRecord) => (
-                    <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
+                  machineProd.map((p: ProductionRecord, idx: number) => (
+                    <div key={`detail-prod-${p.id}-${idx}`} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-black text-slate-400 uppercase">{format(parseISO(p.date), 'dd/MM/yyyy')}</span>
@@ -653,13 +696,13 @@ export function MachineDetailModal({
                         <div className="flex gap-2">
                           <button 
                             onClick={() => onEditProduction(p)}
-                            className="p-2 bg-white text-slate-400 hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                            className="p-2 bg-white text-slate-400 hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => onDeleteProduction(p.id)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -672,8 +715,8 @@ export function MachineDetailModal({
                 )
               ) : (
                 machineDown.length > 0 ? (
-                  machineDown.map((d: DowntimeRecord) => (
-                    <div key={d.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
+                  machineDown.map((d: DowntimeRecord, idx: number) => (
+                    <div key={`detail-down-${d.id}-${idx}`} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-black text-slate-400 uppercase">{format(parseISO(d.date), 'dd/MM/yyyy')}</span>
@@ -686,13 +729,13 @@ export function MachineDetailModal({
                         <div className="flex gap-2">
                           <button 
                             onClick={() => onEditDowntime(d)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => onDeleteDowntime(d.id)}
-                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm opacity-0 group-hover:opacity-100 transition-all"
+                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -707,8 +750,7 @@ export function MachineDetailModal({
             </div>
           </div>
         </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }
 
@@ -777,10 +819,9 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <Modal title="Exportar Relatório PDF" onClose={onClose}>
-          <div className="space-y-6">
+    isOpen && (
+      <Modal title="Exportar Relatório PDF" onClose={onClose}>
+        <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Data Inicial</label>
@@ -812,7 +853,7 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Todas as Máquinas</option>
-                {machines.map((m: Machine) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
 
@@ -837,7 +878,6 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
             </button>
           </div>
         </Modal>
-      )}
-    </AnimatePresence>
+    )
   );
 }

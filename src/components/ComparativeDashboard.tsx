@@ -19,7 +19,10 @@ import {
 import { 
   calculateStats,
   getTimelineSegments,
-  minutesToTime
+  minutesToTime,
+  DAY_START,
+  DAY_END,
+  timeToMinutes
 } from '../utils';
 import { cn } from '../lib/utils';
 
@@ -92,7 +95,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
       {/* Status Summary - Always Visible */}
       <div className="flex flex-wrap gap-2">
         {data.map((m, idx) => (
-          <div key={idx} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 shadow-sm">
+          <div key={`status-${m.name}-${idx}`} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 shadow-sm">
             <div className={cn(
               "w-2 h-2 rounded-full animate-pulse",
               m.status === 'Manutenção' ? "bg-rose-500" : "bg-emerald-500"
@@ -124,7 +127,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                 />
                 <Bar dataKey="producao" radius={[4, 4, 0, 0]}>
                   {data.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.status === 'Manutenção' ? '#f43f5e' : '#10b981'} />
+                    <Cell key={`comp-prod-cell-${index}`} fill={entry.status === 'Manutenção' ? '#f43f5e' : '#10b981'} />
                   ))}
                   <LabelList dataKey="producao" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                 </Bar>
@@ -171,7 +174,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                   tickLine={false} 
                   tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }}
                   tickFormatter={(val) => minutesToTime(val)}
-                  domain={[0, 660]} // 11 hours (07:00 to 18:00)
+                  domain={[0, timeToMinutes(DAY_END) - timeToMinutes(DAY_START)]} 
                 />
                 <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                 <Tooltip 
@@ -186,7 +189,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                 />
                 {Array.from({ length: maxSegments }).map((_, idx) => (
                   <Bar 
-                    key={idx} 
+                    key={`comp-bar-seg-${idx}`} 
                     dataKey={`seg_${idx}`} 
                     stackId="a" 
                     isAnimationActive={false}
@@ -195,7 +198,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
                       const type = entry[`seg_${idx}_type`];
                       return (
                         <Cell 
-                          key={`cell-${index}`} 
+                          key={`comp-cell-seg-${idx}-${index}`} 
                           fill={type === 'production' ? '#10b981' : type === 'downtime' ? '#f43f5e' : '#f1f5f9'} 
                         />
                       );

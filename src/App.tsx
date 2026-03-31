@@ -25,14 +25,17 @@ import {
 import { MachineRow } from './components/MachineRow';
 import { MachineCard } from './components/MachineCard';
 import { ComparativeDashboard } from './components/ComparativeDashboard';
+import { OverviewDashboard } from './components/OverviewDashboard';
 import { 
   MachineManagementModal, 
   ProductionModal, 
   DowntimeModal,
   MachineDetailModal,
   ReportModal,
-  LoginModal
+  LoginModal,
+  SettingsModal
 } from './components/Modals';
+import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import { FileText } from 'lucide-react';
 import { 
@@ -122,13 +125,57 @@ function AppContent() {
   const [downtime, setDowntime] = useState<DowntimeRecord[]>([]);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [currentTime, setCurrentTime] = useState(format(new Date(), 'HH:mm'));
-  const [currentDashboard, setCurrentDashboard] = useState<'timeline' | 'summary' | 'comparative'>('timeline');
+  const [currentDashboard, setCurrentDashboard] = useState<'timeline' | 'summary' | 'comparative' | 'maintenance'>('timeline');
   
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Machines Sheet
+    const machinesWS = XLSX.utils.json_to_sheet(machines.map(m => ({
+      ID: m.id,
+      Nome: m.name,
+      'Produção Teórica/h': m.theoreticalProductionPerHour,
+      'Meta/h': m.hourlyGoal
+    })));
+    XLSX.utils.book_append_sheet(wb, machinesWS, "Máquinas");
+
+    // Production Sheet
+    const productionWS = XLSX.utils.json_to_sheet(production.map(p => {
+      const machine = machines.find(m => m.id === p.machineId);
+      return {
+        'Máquina': machine?.name || p.machineId,
+        Data: p.date,
+        'Hora Início': p.startTime,
+        'Hora Fim': p.endTime,
+        'Quantidade Produzida': p.quantity || 0,
+        'Quantidade Refugo': p.scrapQuantity || 0
+      };
+    }));
+    XLSX.utils.book_append_sheet(wb, productionWS, "Produção");
+
+    // Downtime Sheet
+    const downtimeWS = XLSX.utils.json_to_sheet(downtime.map(d => {
+      const machine = machines.find(m => m.id === d.machineId);
+      return {
+        'Máquina': machine?.name || d.machineId,
+        Data: d.date,
+        'Hora Início': d.startTime,
+        'Hora Fim': d.endTime || 'Em aberto',
+        Tipo: d.type,
+        Observação: d.observation || ''
+      };
+    }));
+    XLSX.utils.book_append_sheet(wb, downtimeWS, "Paradas");
+
+    XLSX.writeFile(wb, `Filigrana_Monitor_Dados_${format(new Date(), 'yyyy-MM-dd_HHmm')}.xlsx`);
+  };
 
   // Auth Sync
   useEffect(() => {
@@ -444,23 +491,23 @@ function AppContent() {
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">Relatórios</span>
             </button>
+
+            <button 
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all"
+              title="Configurações"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+
             {isAuthenticated ? (
-              <>
-                <button 
-                  onClick={() => setIsMachineModalOpen(true)}
-                  className="p-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-all"
-                  title="Configurações"
-                >
-                  <Settings className="w-5 h-5" />
-                </button>
-                <button 
-                  onClick={handleLogout}
-                  className="p-2 bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 rounded-lg transition-all border border-rose-500/30"
-                  title="Sair"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </>
+              <button 
+                onClick={handleLogout}
+                className="p-2 bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 rounded-lg transition-all border border-rose-500/30"
+                title="Sair"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
             ) : (
               <button 
                 onClick={() => setIsLoginModalOpen(true)}
@@ -514,6 +561,17 @@ function AppContent() {
               <span className="hidden sm:inline">Dashboard 3: Comparativo</span>
               <span className="sm:hidden">Comparativo</span>
             </button>
+            <button 
+              onClick={() => setCurrentDashboard('maintenance')}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-black transition-all uppercase tracking-wider",
+                currentDashboard === 'maintenance' ? "bg-white text-brand-primary shadow-md" : "text-slate-500 hover:bg-slate-200"
+              )}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span className="hidden sm:inline">Dashboard 4: Visão Geral</span>
+              <span className="sm:hidden">Visão Geral</span>
+            </button>
           </div>
         </div>
 
@@ -554,9 +612,9 @@ function AppContent() {
           >
             {currentDashboard === 'timeline' && (
               <div className="space-y-2">
-                {machines.map(machine => (
+                {machines.map((machine, idx) => (
                   <MachineRow 
-                    key={machine.id}
+                    key={`${machine.id}-${idx}`}
                     machine={machine}
                     selectedDate={selectedDate}
                     currentTime={currentTime}
@@ -579,9 +637,9 @@ function AppContent() {
 
             {currentDashboard === 'summary' && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {machines.map(machine => (
+                {machines.map((machine, idx) => (
                   <MachineCard 
-                    key={machine.id}
+                    key={`${machine.id}-${idx}`}
                     machine={machine}
                     selectedDate={selectedDate}
                     currentTime={currentTime}
@@ -598,6 +656,16 @@ function AppContent() {
 
             {currentDashboard === 'comparative' && (
               <ComparativeDashboard 
+                machines={machines}
+                selectedDate={selectedDate}
+                currentTime={currentTime}
+                production={production}
+                downtime={downtime}
+              />
+            )}
+
+            {currentDashboard === 'maintenance' && (
+              <OverviewDashboard 
                 machines={machines}
                 selectedDate={selectedDate}
                 currentTime={currentTime}
@@ -626,66 +694,21 @@ function AppContent() {
       <AnimatePresence>
         {isLoginModalOpen && (
           <LoginModal 
+            key="login-modal"
             isOpen={isLoginModalOpen}
             onClose={() => setIsLoginModalOpen(false)}
             onLogin={handleLogin}
           />
         )}
-        {isMachineModalOpen && (
-          <MachineManagementModal 
-            isOpen={isMachineModalOpen}
-            machines={machines}
-            onClose={() => setIsMachineModalOpen(false)}
-            onAdd={addMachine}
-            onUpdate={updateMachine}
-            onDelete={deleteMachine}
-          />
-        )}
-        {isProductionModalOpen && (
-          <ProductionModal 
-            isOpen={isProductionModalOpen}
-            machines={machines}
-            date={selectedDate}
-            editingData={editingRecord?.type === 'production' ? editingRecord.data : null}
-            onClose={() => {
-              setIsProductionModalOpen(false);
-              setEditingRecord(null);
-            }}
-            onSave={saveProduction}
-            onDelete={(id: string) => deleteRecord('production', id)}
-          />
-        )}
-        {isDowntimeModalOpen && (
-          <DowntimeModal 
-            isOpen={isDowntimeModalOpen}
-            machines={machines}
-            date={selectedDate}
-            editingData={editingRecord?.type === 'downtime' ? editingRecord.data : null}
-            onClose={() => {
-              setIsDowntimeModalOpen(false);
-              setEditingRecord(null);
-            }}
-            onSave={saveDowntime}
-            onDelete={(id: string) => deleteRecord('downtime', id)}
-          />
-        )}
-        {isReportModalOpen && (
-          <ReportModal
-            isOpen={isReportModalOpen}
-            onClose={() => setIsReportModalOpen(false)}
-            machines={machines}
-            production={production}
-            downtime={downtime}
-            currentTime={currentTime}
-          />
-        )}
         {selectedMachineForDetail && (
           <MachineDetailModal
+            key={`detail-modal-${selectedMachineForDetail.id}`}
             isOpen={!!selectedMachineForDetail}
             onClose={() => setSelectedMachineForDetail(null)}
             machine={selectedMachineForDetail}
             production={production}
             downtime={downtime}
+            date={selectedDate}
             onEditProduction={(p: any) => {
               if (!isAuthenticated) return;
               setEditingRecord({ type: 'production', data: p });
@@ -708,6 +731,66 @@ function AppContent() {
             isAuthenticated={isAuthenticated}
           />
         )}
+        {isMachineModalOpen && (
+          <MachineManagementModal 
+            key="mgmt-modal"
+            isOpen={isMachineModalOpen}
+            machines={machines}
+            onClose={() => setIsMachineModalOpen(false)}
+            onAdd={addMachine}
+            onUpdate={updateMachine}
+            onDelete={deleteMachine}
+          />
+        )}
+        {isProductionModalOpen && (
+          <ProductionModal 
+            key="prod-modal"
+            isOpen={isProductionModalOpen}
+            machines={machines}
+            date={selectedDate}
+            editingData={editingRecord?.type === 'production' ? editingRecord.data : null}
+            onClose={() => {
+              setIsProductionModalOpen(false);
+              setEditingRecord(null);
+            }}
+            onSave={saveProduction}
+            onDelete={(id: string) => deleteRecord('production', id)}
+          />
+        )}
+        {isDowntimeModalOpen && (
+          <DowntimeModal 
+            key="down-modal"
+            isOpen={isDowntimeModalOpen}
+            machines={machines}
+            date={selectedDate}
+            editingData={editingRecord?.type === 'downtime' ? editingRecord.data : null}
+            onClose={() => {
+              setIsDowntimeModalOpen(false);
+              setEditingRecord(null);
+            }}
+            onSave={saveDowntime}
+            onDelete={(id: string) => deleteRecord('downtime', id)}
+          />
+        )}
+        {isReportModalOpen && (
+          <ReportModal
+            key="report-modal"
+            isOpen={isReportModalOpen}
+            onClose={() => setIsReportModalOpen(false)}
+            machines={machines}
+            production={production}
+            downtime={downtime}
+            currentTime={currentTime}
+          />
+        )}
+        <SettingsModal
+          key="settings-modal"
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+          onManageMachines={() => setIsMachineModalOpen(true)}
+          onDownloadExcel={exportToExcel}
+          isAuthenticated={isAuthenticated}
+        />
       </AnimatePresence>
 
       <footer className="bg-white border-t border-slate-200 p-4 text-center text-xs text-slate-400">
