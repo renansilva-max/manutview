@@ -84,8 +84,6 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
         { start: selectedDate, end: selectedDate }
       );
       
-      const dailyGoal = (m.hourlyGoal || 0) * workingHoursInfo.hours;
-      const goalAchievement = dailyGoal > 0 ? (stats.totalProduction / dailyGoal) * 100 : 0;
       const totalTime = stats.totalOperationalMinutes + stats.totalDowntimeMinutes;
       const maintenancePercent = totalTime > 0 ? (stats.totalDowntimeMinutes / totalTime) * 100 : 0;
 
@@ -95,8 +93,6 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
         prodTime: stats.totalOperationalMinutes,
         maintTime: stats.totalDowntimeMinutes,
         totalProd: stats.totalProduction,
-        dailyGoal: Math.round(dailyGoal),
-        goalAchievement,
         maintenancePercent,
         totalTime
       };
@@ -108,17 +104,14 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
       prodTime: acc.prodTime + curr.prodTime,
       maintTime: acc.maintTime + curr.maintTime,
       totalProd: acc.totalProd + curr.totalProd,
-      dailyGoal: acc.dailyGoal + curr.dailyGoal,
-    }), { prodTime: 0, maintTime: 0, totalProd: 0, dailyGoal: 0 });
+    }), { prodTime: 0, maintTime: 0, totalProd: 0 });
 
     const totalTime = totals.prodTime + totals.maintTime;
-    const goalAchievement = totals.dailyGoal > 0 ? (totals.totalProd / totals.dailyGoal) * 100 : 0;
     const maintenancePercent = totalTime > 0 ? (totals.maintTime / totalTime) * 100 : 0;
 
     return {
       ...totals,
       totalTime,
-      goalAchievement,
       maintenancePercent
     };
   }, [machineData]);
@@ -131,7 +124,7 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
   return (
     <div className="space-y-6 pb-10">
       {/* Total Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
@@ -140,15 +133,6 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
             <span className="text-xs font-bold text-slate-400 uppercase">Produção Total</span>
           </div>
           <div className="text-2xl font-black text-slate-800">{totalStats.totalProd} <span className="text-sm font-bold text-slate-400">peças</span></div>
-          <div className="mt-2 flex flex-col gap-1">
-            <div className="flex items-center gap-1 text-[10px] font-black text-emerald-600 uppercase">
-              <TrendingUp className="w-3 h-3" />
-              {totalStats.goalAchievement.toFixed(1)}% da meta total
-            </div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase">
-              Meta do dia: {totalStats.dailyGoal} peças
-            </div>
-          </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
@@ -174,19 +158,6 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
           </div>
           <div className="text-2xl font-black text-slate-800">{formatDuration(totalStats.prodTime)}</div>
           <div className="mt-2 text-[10px] font-bold text-slate-400 uppercase">Soma de todas as máquinas</div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-amber-50 rounded-lg text-amber-600">
-              <Target className="w-5 h-5" />
-            </div>
-            <span className="text-xs font-bold text-slate-400 uppercase">Meta do Dia</span>
-          </div>
-          <div className="text-2xl font-black text-slate-800">{totalStats.dailyGoal} <span className="text-sm font-bold text-slate-400">peças</span></div>
-          <div className="mt-2 text-[10px] font-bold text-slate-400 uppercase">
-            Turno de {workingHoursInfo.hours.toFixed(1)}h (com 1h almoço)
-          </div>
         </div>
       </div>
 
@@ -265,7 +236,7 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Máquina</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Tempo Produção</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Tempo Manutenção</th>
-                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Produzido / Meta</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Produzido</th>
                 <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Insights</th>
               </tr>
             </thead>
@@ -282,24 +253,10 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
                     <span className="text-sm font-bold text-rose-600">{formatDuration(m.maintTime)}</span>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-black text-slate-700">{m.totalProd} / {m.dailyGoal}</span>
-                      <div className="w-24 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                        <div 
-                          className={cn("h-full", m.goalAchievement >= 100 ? "bg-emerald-500" : "bg-amber-500")}
-                          style={{ width: `${Math.min(m.goalAchievement, 100)}%` }}
-                        />
-                      </div>
-                    </div>
+                    <span className="text-sm font-black text-slate-700">{m.totalProd} peças</span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn("w-1.5 h-1.5 rounded-full", m.goalAchievement >= 80 ? "bg-emerald-500" : "bg-rose-500")} />
-                        <span className="text-[10px] font-bold text-slate-600">
-                          {m.goalAchievement.toFixed(0)}% da meta atingida
-                        </span>
-                      </div>
                       <div className="flex items-center gap-1.5">
                         <div className={cn("w-1.5 h-1.5 rounded-full", m.maintenancePercent < 10 ? "bg-emerald-500" : "bg-rose-500")} />
                         <span className="text-[10px] font-bold text-slate-600">
