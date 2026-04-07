@@ -1,10 +1,10 @@
 {
-  "projectId": "serene-flare-491118-k0",
-  "appId": "1:435649233362:web:ebdba3f24143738a6cc80b",
-  "apiKey": "AIzaSyAGCheuDjUPG1I_UZF8fB5UDCZTVIEZjrM",
-  "authDomain": "serene-flare-491118-k0.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-0e071027-c7f1-4890-b5bb-e9bf87568232",
-  "storageBucket": "serene-flare-491118-k0.firebasestorage.app",
-  "messagingSenderId": "435649233362",
+  "projectId": "projeto-sadege",
+  "appId": "1:174640928065:web:92bdc435980371cff1fdc0",
+  "apiKey": "AIzaSyCivgIAtZhYDTPMnehgGfZ6cV2sYZ_vYP8",
+  "authDomain": "projeto-sadege.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-b4ff6725-7fd0-4c72-88ed-3a80dc9fe6fd",
+  "storageBucket": "projeto-sadege.firebasestorage.app",
+  "messagingSenderId": "174640928065",
   "measurementId": ""
 }

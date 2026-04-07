@@ -1,17 +1,57 @@
-import { format } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { ProductionRecord, DowntimeRecord, TimelineSegment, Machine, MachineStats } from './types';
 
 export const DAY_START = '05:00';
 export const DAY_END = '23:00';
 
+export const calculateSeconds = (start: string, end: string) => {
+  try {
+    const startDate = parse(start, start.length > 5 ? 'HH:mm:ss' : 'HH:mm', new Date());
+    const endDate = parse(end, end.length > 5 ? 'HH:mm:ss' : 'HH:mm', new Date());
+    
+    let diffInMs = endDate.getTime() - startDate.getTime();
+    if (diffInMs < 0) diffInMs += 24 * 60 * 60 * 1000; // Handle midnight crossing
+    
+    return Math.floor(diffInMs / 1000);
+  } catch (e) {
+    return 0;
+  }
+};
+
+export const formatChronometer = (totalSeconds: number) => {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+
+  if (h > 0) {
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+export const formatTotalTime = (totalSeconds: number) => {
+  const totalMinutes = Math.round(totalSeconds / 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h.toString().padStart(2, '0')}h${m.toString().padStart(2, '0')}`;
+};
+
 export function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number);
-  return hours * 60 + minutes;
+  const parts = time.split(':').map(Number);
+  const hours = parts[0] || 0;
+  const minutes = parts[1] || 0;
+  const seconds = parts[2] || 0;
+  return hours * 60 + minutes + seconds / 60;
 }
 
 export function minutesToTime(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const totalSeconds = Math.round(minutes * 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (s > 0) {
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 

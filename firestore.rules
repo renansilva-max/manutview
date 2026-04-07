@@ -5,10 +5,16 @@ service cloud.firestore {
     // Assumed Data Model
     // ===============================================================
     //
+    // Collection: productionLines
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required, 1-100 chars)
+    //
     // Collection: machines
     // Fields:
     //   - id: string (required)
     //   - name: string (required, 1-100 chars)
+    //   - productionLineId: string (required)
     //   - theoreticalProductionPerHour: number (required, > 0)
     //   - hourlyGoal: number (optional, >= 0)
     //
@@ -44,15 +50,26 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        ((request.auth.token.email == "ciaheringgoianesia@gmail.com" || request.auth.token.email == "renan.silva@ciahering.com.br") && request.auth.token.email_verified == true);
+        (request.auth.token.email == "ciaheringgoianesia@gmail.com" || 
+         request.auth.token.email == "renan.silva@ciahering.com.br") &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidProductionLine(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.keys().hasOnly(['id', 'name']);
     }
 
     function isValidMachine(data) {
-      return data.keys().hasAll(['id', 'name', 'theoreticalProductionPerHour']) &&
+      return data.keys().hasAll(['id', 'name', 'productionLineId', 'theoreticalProductionPerHour']) &&
              data.id is string &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.productionLineId is string &&
              data.theoreticalProductionPerHour is number && data.theoreticalProductionPerHour > 0 &&
-             (!('hourlyGoal' in data) || (data.hourlyGoal is number && data.hourlyGoal >= 0));
+             (!('hourlyGoal' in data) || (data.hourlyGoal is number && data.hourlyGoal >= 0)) &&
+             data.keys().hasOnly(['id', 'name', 'productionLineId', 'theoreticalProductionPerHour', 'hourlyGoal']);
     }
 
     function isValidProduction(data) {
@@ -60,10 +77,11 @@ service cloud.firestore {
              data.id is string &&
              data.machineId is string &&
              data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
-             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}$") &&
-             data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}$") &&
+             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$") &&
+             data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$") &&
              (!('quantity' in data) || (data.quantity is number && data.quantity >= 0)) &&
-             (!('scrapQuantity' in data) || (data.scrapQuantity is number && data.scrapQuantity >= 0));
+             (!('scrapQuantity' in data) || (data.scrapQuantity is number && data.scrapQuantity >= 0)) &&
+             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'quantity', 'scrapQuantity']);
     }
 
     function isValidDowntime(data) {
@@ -71,35 +89,67 @@ service cloud.firestore {
              data.id is string &&
              data.machineId is string &&
              data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
-             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}$") &&
+             data.startTime is string && data.startTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$") &&
              data.type is string &&
-             (!('endTime' in data) || (data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}$"))) &&
-             (!('observation' in data) || (data.observation is string));
+             (!('endTime' in data) || (data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$"))) &&
+             (!('observation' in data) || (data.observation is string)) &&
+             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'type', 'observation']);
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['email', 'canEdit', 'canDelete', 'role']) &&
+             data.email is string && isValidEmail(data.email) &&
+             data.canEdit is bool &&
+             data.canDelete is bool &&
+             data.role in ['admin', 'user'] &&
+             data.keys().hasOnly(['email', 'canEdit', 'canDelete', 'role']);
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /downtimeReasons/{reasonId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /productionLines/{lineId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidProductionLine(request.resource.data);
+      allow update: if isAdmin() && isValidProductionLine(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     match /machines/{machineId} {
-      allow read: if true; // Public access as requested
+      allow read: if true;
       allow create: if isAdmin() && isValidMachine(request.resource.data);
       allow update: if isAdmin() && isValidMachine(request.resource.data);
       allow delete: if isAdmin();
     }
 
     match /production/{productionId} {
-      allow read: if true; // Public access as requested
-      allow create: if isAdmin() && isValidProduction(request.resource.data);
-      allow update: if isAdmin() && isValidProduction(request.resource.data);
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidProduction(request.resource.data);
+      allow update: if isAuthenticated() && isValidProduction(request.resource.data);
       allow delete: if isAdmin();
     }
 
     match /downtime/{downtimeId} {
-      allow read: if true; // Public access as requested
-      allow create: if isAdmin() && isValidDowntime(request.resource.data);
-      allow update: if isAdmin() && isValidDowntime(request.resource.data);
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidDowntime(request.resource.data);
+      allow update: if isAuthenticated() && isValidDowntime(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /userProfiles/{profileId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
   }
 }

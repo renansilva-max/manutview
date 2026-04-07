@@ -1,6 +1,12 @@
+export type ProductionLine = {
+  id: string;
+  name: string;
+};
+
 export type Machine = {
   id: string;
   name: string;
+  productionLineId: string;
   theoreticalProductionPerHour: number; // For Performance calculation
   hourlyGoal?: number; // Target production per hour
 };
@@ -16,6 +22,12 @@ export type ProductionRecord = {
 };
 
 export type DowntimeType = 'Mecânica' | 'Elétrica' | 'Outros';
+
+export type DowntimeReason = {
+  id: string;
+  name: string;
+  color: string;
+};
 
 export type DowntimeRecord = {
   id: string;
@@ -47,4 +59,12 @@ export type MachineStats = {
   quality: number; // 0 to 1
   oee: number; // 0 to 1
   productionPerHour: number;
+};
+
+export type UserProfile = {
+  id: string;
+  email: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  role: 'admin' | 'user';
 };

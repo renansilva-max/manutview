@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome, Wrench, Upload, Database } from 'lucide-react';
 import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { Machine, ProductionRecord, DowntimeRecord, MachineStats } from '../types';
+import { Machine, ProductionRecord, DowntimeRecord, MachineStats, DowntimeReason } from '../types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
-import { calculateStats, DAY_START, DAY_END } from '../utils';
+import { calculateStats, DAY_START, DAY_END, timeToMinutes } from '../utils';
 import { cn } from '../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -15,6 +15,9 @@ export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm`}
     >
       <motion.div 
@@ -37,28 +40,153 @@ export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex 
   );
 }
 
-export function SettingsModal({ isOpen, onClose, onManageMachines, onDownloadExcel, isAuthenticated }: any) {
+export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines, onManageReasons, onManageUsers, onDownloadExcel, onResetData, onBackup, onRestore, isAuthenticated, isAdmin, appName, appDescription, onUpdateConfig }: any) {
+  const [editingName, setEditingName] = useState(appName);
+  const [editingDesc, setEditingDesc] = useState(appDescription);
+
+  React.useEffect(() => {
+    setEditingName(appName);
+    setEditingDesc(appDescription);
+  }, [appName, appDescription, isOpen]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onRestore(file);
+      onClose();
+    }
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
         <Modal title="Configurações" onClose={onClose}>
           <div className="space-y-4">
-            {isAuthenticated && (
-              <button
-                onClick={() => {
-                  onManageMachines();
-                  onClose();
-                }}
-                className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
-              >
-                <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
-                  <Settings className="w-6 h-6 text-slate-600" />
+            {isAdmin && (
+              <>
+                <div className="p-4 bg-slate-50 rounded-2xl space-y-4">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 px-1">Nome do Aplicativo</label>
+                      <input 
+                        type="text" 
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={() => onUpdateConfig(editingName, editingDesc)}
+                        onKeyDown={(e) => e.key === 'Enter' && onUpdateConfig(editingName, editingDesc)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500 transition-all"
+                        placeholder="Nome do App"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 px-1">Descrição / Slogan</label>
+                      <input 
+                        type="text" 
+                        value={editingDesc}
+                        onChange={(e) => setEditingDesc(e.target.value)}
+                        onBlur={() => onUpdateConfig(editingName, editingDesc)}
+                        onKeyDown={(e) => e.key === 'Enter' && onUpdateConfig(editingName, editingDesc)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-500 focus:ring-2 focus:ring-emerald-500 transition-all"
+                        placeholder="Descrição do App"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-800">Gerenciar Máquinas</h3>
-                  <p className="text-xs text-slate-500">Adicionar, editar ou excluir máquinas do sistema.</p>
+
+                <button
+                  onClick={() => {
+                    onManageLines();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
+                >
+                  <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <Settings className="w-6 h-6 text-slate-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Linhas de Produção</h3>
+                    <p className="text-xs text-slate-500">Gerenciar linhas de produção do sistema.</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onManageMachines();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
+                >
+                  <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <Settings className="w-6 h-6 text-slate-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Gerenciar Máquinas</h3>
+                    <p className="text-xs text-slate-500">Adicionar, editar ou excluir máquinas.</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onManageReasons();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
+                >
+                  <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <Wrench className="w-6 h-6 text-slate-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Motivos de Parada</h3>
+                    <p className="text-xs text-slate-500">Configurar motivos e cores para paradas.</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onManageUsers?.();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl transition-all group text-left"
+                >
+                  <div className="p-3 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform">
+                    <Lock className="w-6 h-6 text-slate-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800">Gerenciar Usuários</h3>
+                    <p className="text-xs text-slate-500">Controle de permissões e acessos.</p>
+                  </div>
+                </button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={onBackup}
+                    className="flex flex-col items-center gap-2 p-4 bg-emerald-50 hover:bg-emerald-100 rounded-2xl transition-all group text-center"
+                  >
+                    <Database className="w-6 h-6 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-700">Backup Geral</span>
+                  </button>
+
+                  <label className="flex flex-col items-center gap-2 p-4 bg-blue-50 hover:bg-blue-100 rounded-2xl transition-all group text-center cursor-pointer">
+                    <Upload className="w-6 h-6 text-blue-600" />
+                    <span className="text-xs font-bold text-blue-700">Restaurar Backup</span>
+                    <input type="file" accept=".json" onChange={handleFileChange} className="hidden" />
+                  </label>
                 </div>
-              </button>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Isso irá restaurar as linhas, máquinas e motivos para os valores iniciais. Deseja continuar?")) {
+                        onResetData();
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 p-3 text-rose-600 hover:bg-rose-50 rounded-xl transition-all text-xs font-bold"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Restaurar Dados Iniciais (Admin)
+                  </button>
+                </div>
+              </>
             )}
 
             <button
@@ -215,8 +343,82 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
   );
 }
 
-export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpdate, onDelete }: any) {
+export function ProductionLineManagementModal({ isOpen, lines, onClose, onAdd, onUpdate, onDelete }: any) {
   const [newName, setNewName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  return (
+    isOpen && (
+      <Modal title="Gerenciar Linhas de Produção" onClose={onClose}>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase">Nova Linha</label>
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                placeholder="Nome da Linha"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="flex-1 px-4 py-2 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button 
+                onClick={async () => {
+                  if (newName) {
+                    setIsLoading(true);
+                    try {
+                      await onAdd(newName);
+                      setNewName('');
+                    } catch (error) {
+                      console.error("Error adding line:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }
+                }}
+                disabled={isLoading}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50"
+              >
+                {isLoading ? '...' : 'Add'}
+              </button>
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+            {[...lines].sort((a, b) => a.name.localeCompare(b.name)).map((l: any, idx: number) => (
+              <div key={`mgmt-line-${l.id}-${idx}`} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl group">
+                <input 
+                  type="text" 
+                  value={l.name}
+                  onChange={(e) => onUpdate(l.id, { name: e.target.value })}
+                  className="bg-transparent border-none font-bold text-slate-700 focus:ring-0 p-0 text-sm flex-1"
+                />
+                <button 
+                  onClick={async () => {
+                    setIsLoading(true);
+                    try {
+                      await onDelete(l.id);
+                    } catch (error) {
+                      console.error("Error deleting line:", error);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="p-2 text-rose-500 opacity-100 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    )
+  );
+}
+
+export function MachineManagementModal({ isOpen, machines, productionLines, onClose, onAdd, onUpdate, onDelete }: any) {
+  const [newName, setNewName] = useState('');
+  const [newLineId, setNewLineId] = useState(productionLines[0]?.id || '');
   const [newTheoretical, setNewTheoretical] = useState('100');
   const [newGoal, setNewGoal] = useState('80');
   const [isLoading, setIsLoading] = useState(false);
@@ -238,10 +440,10 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
               />
               <button 
                 onClick={async () => {
-                  if (newName) {
+                  if (newName && newLineId) {
                     setIsLoading(true);
                     try {
-                      await onAdd(newName, parseInt(newTheoretical) || 100, parseInt(newGoal) || 80);
+                      await onAdd(newName, newLineId, parseInt(newTheoretical) || 100, parseInt(newGoal) || 80);
                       setNewName('');
                       setNewTheoretical('100');
                       setNewGoal('80');
@@ -252,11 +454,26 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
                     }
                   }
                 }}
-                disabled={isLoading}
+                disabled={isLoading || !newLineId}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50"
               >
                 {isLoading ? '...' : 'Add'}
               </button>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Linha de Produção</label>
+                <select 
+                  value={newLineId}
+                  onChange={(e) => setNewLineId(e.target.value)}
+                  className="w-full px-4 py-2 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                >
+                  <option value="" disabled>Selecione uma linha</option>
+                  {productionLines.map((l: any, idx: number) => (
+                    <option key={`${l.id}-${idx}`} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
@@ -283,7 +500,7 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
           </div>
         </div>
         <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-          {machines.map((m: Machine, idx: number) => (
+          {[...machines].sort((a, b) => a.name.localeCompare(b.name)).map((m: Machine, idx: number) => (
             <div key={`mgmt-machine-${m.id}-${idx}`} className="flex flex-col p-3 bg-slate-50 rounded-xl group gap-2">
               <div className="flex items-center justify-between">
                 <input 
@@ -310,6 +527,18 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1 col-span-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">Linha:</span>
+                  <select 
+                    value={m.productionLineId}
+                    onChange={(e) => onUpdate(m.id, { productionLineId: e.target.value })}
+                    className="w-full bg-white border border-slate-200 rounded px-2 py-0.5 text-xs font-bold text-slate-600 focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {productionLines.map((l: any, idx: number) => (
+                      <option key={`${l.id}-${idx}`} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Teórica/h:</span>
                   <input 
@@ -338,8 +567,257 @@ export function MachineManagementModal({ isOpen, machines, onClose, onAdd, onUpd
   );
 }
 
+export function FilterModal({ isOpen, lines, selectedLineIds, onClose, onToggleLine, onSelectAll, onClearAll }: any) {
+  return (
+    isOpen && (
+      <Modal title="Filtrar Linhas de Produção" onClose={onClose}>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <button 
+              onClick={onSelectAll}
+              className="text-xs font-bold text-emerald-600 hover:underline"
+            >
+              Selecionar Todas
+            </button>
+            <button 
+              onClick={onClearAll}
+              className="text-xs font-bold text-rose-600 hover:underline"
+            >
+              Limpar Todas
+            </button>
+          </div>
+          <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+            {lines.map((line: any, idx: number) => (
+              <button 
+                key={`${line.id}-${idx}`}
+                onClick={() => onToggleLine(line.id)}
+                className={cn(
+                  "w-full flex items-center justify-between p-3 rounded-xl transition-all border-2",
+                  selectedLineIds.includes(line.id) 
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+                    : "bg-slate-50 border-slate-100 text-slate-400"
+                )}
+              >
+                <span className="font-bold text-sm">{line.name}</span>
+                {selectedLineIds.includes(line.id) && <Check className="w-4 h-4" />}
+              </button>
+            ))}
+          </div>
+          <button 
+            onClick={onClose}
+            className="w-full py-3 bg-brand-primary text-white rounded-xl font-bold hover:bg-slate-800 transition-all"
+          >
+            Aplicar Filtros
+          </button>
+        </div>
+      </Modal>
+    )
+  );
+}
+
+function DowntimeReasonRow({ reason, onUpdate, onDelete }: any) {
+  const [name, setName] = useState(reason.name);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const colors = ['#e11d48', '#2563eb', '#d97706', '#4b5563', '#10b981', '#8b5cf6', '#f43f5e', '#0ea5e9'];
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await onDelete(reason.id);
+    } catch (error) {
+      console.error("Error deleting reason:", error);
+      alert("Erro ao excluir motivo. Verifique sua conexão ou permissões.");
+      setIsDeleting(false);
+      setShowConfirm(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col p-3 bg-slate-50 rounded-xl gap-3">
+      <div className="flex items-center gap-3">
+        <button 
+          onClick={() => setShowColorPicker(!showColorPicker)}
+          className="w-8 h-8 rounded-full border-2 border-white shadow-sm shrink-0 transition-transform hover:scale-110"
+          style={{ backgroundColor: reason.color }}
+          title="Clique para mudar a cor"
+        />
+
+        <input 
+          type="text" 
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => {
+            if (name !== reason.name) {
+              onUpdate(reason.id, { name });
+            }
+          }}
+          className="bg-transparent border-none font-bold text-slate-700 focus:ring-0 p-0 text-sm flex-1"
+        />
+        
+        {showConfirm ? (
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="px-2 py-1 bg-rose-600 text-white text-[10px] font-black uppercase rounded-lg hover:bg-rose-700 transition-all disabled:opacity-50"
+            >
+              {isDeleting ? 'Excluindo...' : 'Confirmar'}
+            </button>
+            <button 
+              onClick={() => setShowConfirm(false)}
+              disabled={isDeleting}
+              className="p-1 text-slate-400 hover:bg-slate-200 rounded-lg transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setShowConfirm(true)}
+            className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showColorPicker && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="flex gap-2 flex-wrap p-2 bg-white rounded-xl border border-slate-100">
+              {colors.map((c, idx) => (
+                <button 
+                  key={`${c}-${idx}`}
+                  onClick={() => {
+                    onUpdate(reason.id, { color: c });
+                    setShowColorPicker(false);
+                  }}
+                  className={cn(
+                    "w-6 h-6 rounded-full border-2 transition-all hover:scale-110",
+                    reason.color === c ? "border-slate-800" : "border-transparent"
+                  )}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export function DowntimeReasonManagementModal({ isOpen, reasons, onClose, onAdd, onUpdate, onDelete }: any) {
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState('#e11d48');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
+  const colors = [
+    '#e11d48', '#2563eb', '#d97706', '#4b5563', '#10b981', '#8b5cf6', '#f43f5e', '#0ea5e9'
+  ];
+
+  return (
+    isOpen && (
+      <Modal title="Gerenciar Motivos de Parada" onClose={onClose}>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-400 uppercase">Novo Motivo</label>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-3 items-center">
+                <button 
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  className="w-10 h-10 rounded-xl border-2 border-white shadow-sm shrink-0 transition-transform hover:scale-105"
+                  style={{ backgroundColor: newColor }}
+                  title="Escolher cor"
+                />
+                <input 
+                  type="text" 
+                  placeholder="Nome do Motivo"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="flex-1 px-4 py-2 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button 
+                  onClick={async () => {
+                    if (newName) {
+                      setIsLoading(true);
+                      try {
+                        await onAdd(newName, newColor);
+                        setNewName('');
+                        setShowColorPicker(false);
+                      } catch (error) {
+                        console.error("Error adding reason:", error);
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold disabled:opacity-50"
+                >
+                  {isLoading ? '...' : 'Add'}
+                </button>
+              </div>
+              
+              <AnimatePresence>
+                {showColorPicker && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex gap-2 flex-wrap p-3 bg-white rounded-2xl border border-slate-100 shadow-inner">
+                      {colors.map((c, idx) => (
+                        <button 
+                          key={`${c}-${idx}`}
+                          onClick={() => {
+                            setNewColor(c);
+                            setShowColorPicker(false);
+                          }}
+                          className={cn(
+                            "w-8 h-8 rounded-full border-2 transition-all hover:scale-110",
+                            newColor === c ? "border-slate-800" : "border-transparent"
+                          )}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+          <div className="max-h-80 overflow-y-auto space-y-3 pr-2">
+            {reasons.map((r: any, idx: number) => (
+              <DowntimeReasonRow 
+                key={`mgmt-reason-${r.id}-${idx}`} 
+                reason={r} 
+                onUpdate={onUpdate} 
+                onDelete={onDelete} 
+              />
+            ))}
+          </div>
+        </div>
+      </Modal>
+    )
+  );
+}
+
 export function ProductionModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete }: any) {
-  const [machineId, setMachineId] = useState(editingData?.machineId || machines[0]?.id || '');
+  const sortedMachines = useMemo(() => {
+    return [...machines].sort((a, b) => a.name.localeCompare(b.name));
+  }, [machines]);
+
+  const [machineId, setMachineId] = useState(editingData?.machineId || sortedMachines[0]?.id || '');
   const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
   const [endTime, setEndTime] = useState(editingData?.endTime || DAY_END);
   const [quantity, setQuantity] = useState(editingData?.quantity?.toString() || '');
@@ -377,7 +855,7 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
               >
-                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
+                {sortedMachines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -458,11 +936,15 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
   );
 }
 
-export function DowntimeModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete }: any) {
-  const [machineId, setMachineId] = useState(editingData?.machineId || machines[0]?.id || '');
+export function DowntimeModal({ isOpen, machines, date, reasons, editingData, onClose, onSave, onDelete }: any) {
+  const sortedMachines = useMemo(() => {
+    return [...machines].sort((a, b) => a.name.localeCompare(b.name));
+  }, [machines]);
+
+  const [machineId, setMachineId] = useState(editingData?.machineId || sortedMachines[0]?.id || '');
   const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
   const [endTime, setEndTime] = useState(editingData?.endTime || '');
-  const [type, setType] = useState(editingData?.type || 'Mecânica');
+  const [type, setType] = useState(editingData?.type || reasons?.[0]?.name || 'Mecânica');
   const [observation, setObservation] = useState(editingData?.observation || '');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -497,7 +979,7 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-rose-500"
               >
-                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
+                {sortedMachines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -527,9 +1009,16 @@ export function DowntimeModal({ isOpen, machines, date, editingData, onClose, on
                 onChange={(e) => setType(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-rose-500"
               >
-                <option value="Mecânica">Mecânica</option>
-                <option value="Elétrica">Elétrica</option>
-                <option value="Outros">Outros</option>
+                {reasons?.map((reason: any, idx: number) => (
+                  <option key={`${reason.id}-${idx}`} value={reason.name}>{reason.name}</option>
+                ))}
+                {!reasons?.length && (
+                  <>
+                    <option value="Mecânica">Mecânica</option>
+                    <option value="Elétrica">Elétrica</option>
+                    <option value="Outros">Outros</option>
+                  </>
+                )}
               </select>
             </div>
             <div>
@@ -592,7 +1081,7 @@ export function MachineDetailModal({
   onUpdateMachine,
   isAuthenticated
 }: any) {
-  const [activeTab, setActiveTab] = useState<'producao' | 'manutencao'>('producao');
+  const [activeTab, setActiveTab] = useState<'producao' | 'intervencoes'>('producao');
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [tempGoal, setTempGoal] = useState(machine?.hourlyGoal?.toString() || '0');
 
@@ -670,10 +1159,10 @@ export function MachineDetailModal({
                 Produção
               </button>
               <button 
-                onClick={() => setActiveTab('manutencao')}
-                className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'manutencao' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                onClick={() => setActiveTab('intervencoes')}
+                className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'intervencoes' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
-                Manutenção
+                Intervenções
               </button>
             </div>
 
@@ -681,7 +1170,14 @@ export function MachineDetailModal({
               {activeTab === 'producao' ? (
                 machineProd.length > 0 ? (
                   machineProd.map((p: ProductionRecord, idx: number) => (
-                    <div key={`detail-prod-${p.id}-${idx}`} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
+                    <div 
+                      key={`detail-prod-${p.id}-${idx}`} 
+                      onClick={() => isAuthenticated && onEditProduction(p)}
+                      className={cn(
+                        "p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group transition-all",
+                        isAuthenticated && "cursor-pointer hover:bg-slate-100 hover:border-emerald-200"
+                      )}
+                    >
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-black text-slate-400 uppercase">{format(parseISO(p.date), 'dd/MM/yyyy')}</span>
@@ -694,15 +1190,15 @@ export function MachineDetailModal({
                       </div>
                       {isAuthenticated && (
                         <div className="flex gap-2">
-                          <button 
-                            onClick={() => onEditProduction(p)}
-                            className="p-2 bg-white text-slate-500 hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm transition-all"
-                          >
+                          <div className="p-2 bg-white text-slate-400 group-hover:text-emerald-600 rounded-xl border border-slate-200 shadow-sm transition-all">
                             <Edit2 className="w-4 h-4" />
-                          </button>
+                          </div>
                           <button 
-                            onClick={() => onDeleteProduction(p.id)}
-                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteProduction(p.id);
+                            }}
+                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -716,26 +1212,43 @@ export function MachineDetailModal({
               ) : (
                 machineDown.length > 0 ? (
                   machineDown.map((d: DowntimeRecord, idx: number) => (
-                    <div key={`detail-down-${d.id}-${idx}`} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group">
+                    <div 
+                      key={`detail-down-${d.id}-${idx}`} 
+                      onClick={() => isAuthenticated && onEditDowntime(d)}
+                      className={cn(
+                        "p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group transition-all",
+                        isAuthenticated && "cursor-pointer hover:bg-slate-100 hover:border-rose-200"
+                      )}
+                    >
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-black text-slate-400 uppercase">{format(parseISO(d.date), 'dd/MM/yyyy')}</span>
                           <span className="px-2 py-0.5 bg-rose-100 text-rose-700 rounded text-[10px] font-bold">{d.startTime} - {d.endTime || 'Em aberto'}</span>
                         </div>
-                        <div className="text-sm font-bold text-slate-700 mb-1">{d.type}</div>
-                        {d.observation && <div className="text-xs text-slate-500 italic">{d.observation}</div>}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase">Motivo:</span>
+                          <div className="text-sm font-black text-slate-800">{d.type}</div>
+                        </div>
+                        {d.observation && (
+                          <div className="mt-2 p-2 bg-white/60 rounded-xl border border-slate-100">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase block mb-0.5">Observação:</span>
+                            <div className="text-xs text-slate-600 italic leading-relaxed">
+                              {d.observation}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       {isAuthenticated && (
                         <div className="flex gap-2">
-                          <button 
-                            onClick={() => onEditDowntime(d)}
-                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
-                          >
+                          <div className="p-2 bg-white text-slate-400 group-hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all">
                             <Edit2 className="w-4 h-4" />
-                          </button>
+                          </div>
                           <button 
-                            onClick={() => onDeleteDowntime(d.id)}
-                            className="p-2 bg-white text-slate-500 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteDowntime(d.id);
+                            }}
+                            className="p-2 bg-white text-slate-400 hover:text-rose-600 rounded-xl border border-slate-200 shadow-sm transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -744,7 +1257,7 @@ export function MachineDetailModal({
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-10 text-slate-400 font-medium">Nenhum registro de manutenção.</div>
+                  <div className="text-center py-10 text-slate-400 font-medium">Nenhum registro de intervenções.</div>
                 )
               )}
             </div>
@@ -754,10 +1267,68 @@ export function MachineDetailModal({
   );
 }
 
-export function ReportModal({ isOpen, machines, production, downtime, currentTime, onClose }: any) {
+export function ReportModal({ isOpen, machines, productionLines, production, downtime, currentTime, onClose }: any) {
+  const sortedMachines = useMemo(() => {
+    return [...machines].sort((a, b) => a.name.localeCompare(b.name));
+  }, [machines]);
+
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [selectedMachineId, setSelectedMachineId] = useState('all');
+  
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>(productionLines.map((l: any) => l.id));
+  const [selectedMachineIds, setSelectedMachineIds] = useState<string[]>(machines.map((m: any) => m.id));
+
+  // Sync selections when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedLineIds(productionLines.map((l: any) => l.id));
+      setSelectedMachineIds(machines.map((m: any) => m.id));
+    }
+  }, [isOpen, productionLines, machines]);
+
+  const filteredMachinesForSelection = useMemo(() => {
+    return sortedMachines.filter(m => selectedLineIds.includes(m.productionLineId));
+  }, [sortedMachines, selectedLineIds]);
+
+  const toggleLine = (id: string) => {
+    setSelectedLineIds(prev => {
+      const newLines = prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id];
+      // Also update machines: if a line is removed, remove its machines
+      if (prev.includes(id)) {
+        const machinesOfLine = machines.filter((m: any) => m.productionLineId === id).map((m: any) => m.id);
+        setSelectedMachineIds(mPrev => mPrev.filter(mId => !machinesOfLine.includes(mId)));
+      } else {
+        // If a line is added, add its machines
+        const machinesOfLine = machines.filter((m: any) => m.productionLineId === id).map((m: any) => m.id);
+        setSelectedMachineIds(mPrev => [...new Set([...mPrev, ...machinesOfLine])]);
+      }
+      return newLines;
+    });
+  };
+
+  const toggleMachine = (id: string) => {
+    setSelectedMachineIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const selectAllLines = () => {
+    setSelectedLineIds(productionLines.map((l: any) => l.id));
+    setSelectedMachineIds(machines.map((m: any) => m.id));
+  };
+
+  const deselectAllLines = () => {
+    setSelectedLineIds([]);
+    setSelectedMachineIds([]);
+  };
+
+  const selectAllMachines = () => {
+    const currentFilteredIds = filteredMachinesForSelection.map(m => m.id);
+    setSelectedMachineIds(prev => [...new Set([...prev, ...currentFilteredIds])]);
+  };
+
+  const deselectAllMachines = () => {
+    const currentFilteredIds = filteredMachinesForSelection.map(m => m.id);
+    setSelectedMachineIds(prev => prev.filter(id => !currentFilteredIds.includes(id)));
+  };
 
   const generatePDF = () => {
     const doc = new jsPDF();
@@ -773,21 +1344,90 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
     doc.text(dateRange, 14, 30);
     doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 35);
 
-    const filteredMachines = selectedMachineId === 'all' 
-      ? machines 
-      : machines.filter((m: Machine) => m.id === selectedMachineId);
+    const filteredMachines = machines.filter((m: Machine) => selectedMachineIds.includes(m.id));
 
-    const tableData = filteredMachines.map((m: Machine) => {
-      const stats = calculateStats(m, production, downtime, currentTime, { start: startDate, end: endDate });
-      return [
-        m.name,
-        stats.totalProduction.toString(),
-        `${(stats.totalOperationalMinutes / 60).toFixed(1)}h`,
-        `${(stats.totalDowntimeMinutes / 60).toFixed(1)}h`,
-        `${(stats.totalAvailableMinutes / 60).toFixed(1)}h`,
-        `${(stats.availability * 100).toFixed(1)}%`,
-        `${(stats.oee * 100).toFixed(1)}%`
-      ];
+    if (filteredMachines.length === 0) {
+      alert("Selecione pelo menos uma máquina para gerar o relatório.");
+      return;
+    }
+
+    // Group by Production Line
+    const machinesByLine: Record<string, Machine[]> = {};
+    filteredMachines.forEach(m => {
+      if (!machinesByLine[m.productionLineId]) {
+        machinesByLine[m.productionLineId] = [];
+      }
+      machinesByLine[m.productionLineId].push(m);
+    });
+
+    const tableData: any[] = [];
+    
+    // Sort lines by name
+    const sortedLines = productionLines
+      .filter((l: any) => selectedLineIds.includes(l.id))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+    let grandTotalProd = 0;
+    let grandTotalOp = 0;
+    let grandOEEAccum = 0;
+    let totalMachinesCount = 0;
+
+    sortedLines.forEach((line: any) => {
+      const lineMachines = machinesByLine[line.id] || [];
+      if (lineMachines.length === 0) return;
+
+      // Sort machines alphabetically
+      lineMachines.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Add Line Header Row
+      tableData.push([
+        { 
+          content: `LINHA: ${line.name.toUpperCase()}`, 
+          colSpan: 7, 
+          styles: { fillColor: [241, 245, 249], fontStyle: 'bold', textColor: [30, 41, 59] } 
+        }
+      ]);
+
+      let lineTotalProd = 0;
+      let lineTotalOp = 0;
+      let lineTotalDown = 0;
+      let lineTotalAvail = 0;
+      let lineOEEAccum = 0;
+
+      lineMachines.forEach(m => {
+        const stats = calculateStats(m, production, downtime, currentTime, { start: startDate, end: endDate });
+        tableData.push([
+          m.name,
+          stats.totalProduction.toString(),
+          `${(stats.totalOperationalMinutes / 60).toFixed(1)}h`,
+          `${(stats.totalDowntimeMinutes / 60).toFixed(1)}h`,
+          `${(stats.totalAvailableMinutes / 60).toFixed(1)}h`,
+          `${(stats.availability * 100).toFixed(1)}%`,
+          `${(stats.oee * 100).toFixed(1)}%`
+        ]);
+
+        lineTotalProd += stats.totalProduction;
+        lineTotalOp += stats.totalOperationalMinutes;
+        lineTotalDown += stats.totalDowntimeMinutes;
+        lineTotalAvail += stats.totalAvailableMinutes;
+        lineOEEAccum += stats.oee;
+        
+        grandTotalProd += stats.totalProduction;
+        grandTotalOp += stats.totalOperationalMinutes;
+        grandOEEAccum += stats.oee;
+        totalMachinesCount++;
+      });
+
+      // Add Line Total Row
+      tableData.push([
+        { content: `TOTAL ${line.name.toUpperCase()}`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: lineTotalProd.toString(), styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: `${(lineTotalOp / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: `${(lineTotalDown / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: `${(lineTotalAvail / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: `${((lineTotalOp / (lineTotalAvail || 1)) * 100).toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: `${((lineOEEAccum / lineMachines.length) * 100).toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } }
+      ]);
     });
 
     autoTable(doc, {
@@ -796,14 +1436,50 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold' },
-      styles: { fontSize: 9 },
-      alternateRowStyles: { fillColor: [248, 250, 252] }
+      styles: { fontSize: 8 },
+      alternateRowStyles: { fillColor: [255, 255, 255] }
     });
 
+    // Downtime Reasons Breakdown
+    const downtimeByReason: Record<string, number> = {};
+    filteredMachines.forEach(m => {
+      const machineDowntime = downtime.filter((d: any) => 
+        d.machineId === m.id && 
+        d.date >= startDate && 
+        d.date <= endDate
+      );
+      
+      machineDowntime.forEach((d: any) => {
+        const start = timeToMinutes(d.startTime);
+        const end = d.endTime ? timeToMinutes(d.endTime) : timeToMinutes(currentTime);
+        const duration = Math.max(0, end - start);
+        downtimeByReason[d.type] = (downtimeByReason[d.type] || 0) + duration;
+      });
+    });
+
+    const reasonData = Object.entries(downtimeByReason)
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, duration]) => [type, `${(duration / 60).toFixed(1)}h`]);
+
+    if (reasonData.length > 0) {
+      const finalYMain = (doc as any).lastAutoTable.finalY + 15;
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text("Detalhamento de Paradas por Motivo", 14, finalYMain);
+
+      autoTable(doc, {
+        startY: finalYMain + 5,
+        head: [['Motivo da Parada', 'Tempo Total']],
+        body: reasonData,
+        theme: 'striped',
+        headStyles: { fillColor: [100, 116, 139], textColor: 255 },
+        styles: { fontSize: 9 },
+        margin: { left: 14, right: 100 } // Make it narrower
+      });
+    }
+
     // Summary
-    const totalProd = tableData.reduce((acc: number, row: any) => acc + parseInt(row[1]), 0);
-    const totalOp = tableData.reduce((acc: number, row: any) => acc + parseFloat(row[2]), 0);
-    const avgOEE = tableData.reduce((acc: number, row: any) => acc + parseFloat(row[6]), 0) / tableData.length;
+    const avgOEE = totalMachinesCount > 0 ? (grandOEEAccum / totalMachinesCount) : 0;
 
     const finalY = (doc as any).lastAutoTable.finalY + 15;
     doc.setFontSize(14);
@@ -811,16 +1487,16 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
     doc.text("Resumo Geral", 14, finalY);
     
     doc.setFontSize(10);
-    doc.text(`Total Produzido: ${totalProd} unidades`, 14, finalY + 10);
-    doc.text(`Tempo Total Operação: ${totalOp.toFixed(1)} horas`, 14, finalY + 17);
-    doc.text(`OEE Médio: ${avgOEE.toFixed(1)}%`, 14, finalY + 24);
+    doc.text(`Total Produzido: ${grandTotalProd} unidades`, 14, finalY + 10);
+    doc.text(`Tempo Total Operação: ${(grandTotalOp / 60).toFixed(1)} horas`, 14, finalY + 17);
+    doc.text(`OEE Médio: ${(avgOEE * 100).toFixed(1)}%`, 14, finalY + 24);
 
     doc.save(`relatorio-producao-${startDate}-a-${endDate}.pdf`);
   };
 
   return (
     isOpen && (
-      <Modal title="Exportar Relatório PDF" onClose={onClose}>
+      <Modal title="Exportar Relatório PDF" onClose={onClose} maxWidth="max-w-2xl">
         <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -845,16 +1521,65 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Máquina</label>
-              <select 
-                value={selectedMachineId}
-                onChange={(e) => setSelectedMachineId(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
-              >
-                <option value="all">Todas as Máquinas</option>
-                {machines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">Linhas de Produção</label>
+                  <div className="flex gap-2">
+                    <button onClick={selectAllLines} className="text-[10px] font-bold text-emerald-600 hover:underline">Tudo</button>
+                    <button onClick={deselectAllLines} className="text-[10px] font-bold text-rose-600 hover:underline">Nada</button>
+                  </div>
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                  {productionLines.map((line: any) => (
+                    <button 
+                      key={`report-line-${line.id}`}
+                      onClick={() => toggleLine(line.id)}
+                      className={cn(
+                        "w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left",
+                        selectedLineIds.includes(line.id) 
+                          ? "bg-white shadow-sm ring-1 ring-emerald-500/20 text-emerald-900" 
+                          : "text-slate-400 hover:bg-white/50"
+                      )}
+                    >
+                      <span className="font-bold text-xs">{line.name}</span>
+                      {selectedLineIds.includes(line.id) && <Check className="w-3 h-3 text-emerald-600" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">Máquinas</label>
+                  <div className="flex gap-2">
+                    <button onClick={selectAllMachines} className="text-[10px] font-bold text-blue-600 hover:underline">Tudo</button>
+                    <button onClick={deselectAllMachines} className="text-[10px] font-bold text-rose-600 hover:underline">Nada</button>
+                  </div>
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                  {filteredMachinesForSelection.map((m: any) => (
+                    <button 
+                      key={`report-machine-${m.id}`}
+                      onClick={() => toggleMachine(m.id)}
+                      className={cn(
+                        "w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left",
+                        selectedMachineIds.includes(m.id) 
+                          ? "bg-white shadow-sm ring-1 ring-blue-500/20 text-blue-900" 
+                          : "text-slate-400 hover:bg-white/50"
+                      )}
+                    >
+                      <span className="font-bold text-xs">{m.name}</span>
+                      {selectedMachineIds.includes(m.id) && <Check className="w-3 h-3 text-blue-600" />}
+                    </button>
+                  ))}
+                  {filteredMachinesForSelection.length === 0 && (
+                    <div className="text-center py-8 text-[10px] text-slate-400 font-medium italic">
+                      Selecione uma linha para ver as máquinas.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
@@ -878,6 +1603,134 @@ export function ReportModal({ isOpen, machines, production, downtime, currentTim
             </button>
           </div>
         </Modal>
+    )
+  );
+}
+
+export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, onDelete }: any) {
+  const [newEmail, setNewEmail] = useState('');
+  const [newCanEdit, setNewCanEdit] = useState(true);
+  const [newCanDelete, setNewCanDelete] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleAdd = async () => {
+    if (!newEmail) return;
+    setIsLoading(true);
+    try {
+      await onAdd({
+        email: newEmail.toLowerCase().trim(),
+        canEdit: newCanEdit,
+        canDelete: newCanDelete,
+        role: 'user'
+      });
+      setNewEmail('');
+    } catch (error) {
+      console.error("Error adding user:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    isOpen && (
+      <Modal title="Gerenciar Usuários" onClose={onClose} maxWidth="max-w-lg">
+        <div className="space-y-6">
+          <div className="p-4 bg-slate-50 rounded-2xl space-y-4">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Adicionar Novo Usuário</h3>
+            <div className="space-y-3">
+              <input 
+                type="email" 
+                placeholder="E-mail do usuário"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+              />
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={newCanEdit}
+                    onChange={(e) => setNewCanEdit(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-slate-600">Pode Editar</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={newCanDelete}
+                    onChange={(e) => setNewCanDelete(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-slate-600">Pode Excluir</span>
+                </label>
+              </div>
+              <button 
+                onClick={handleAdd}
+                disabled={isLoading || !newEmail}
+                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50"
+              >
+                Adicionar Usuário
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Usuários Cadastrados</h3>
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
+              {users.map((user: any) => (
+                <div key={user.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-bold text-slate-700">{user.email}</span>
+                    <div className="flex gap-2">
+                      <span className={cn(
+                        "text-[9px] font-black uppercase px-1.5 py-0.5 rounded",
+                        user.canEdit ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                      )}>
+                        {user.canEdit ? "Editar" : "Sem Edição"}
+                      </span>
+                      <span className={cn(
+                        "text-[9px] font-black uppercase px-1.5 py-0.5 rounded",
+                        user.canDelete ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-400"
+                      )}>
+                        {user.canDelete ? "Excluir" : "Sem Exclusão"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => onUpdate(user.id, { canEdit: !user.canEdit })}
+                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                      title="Alternar Edição"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => onUpdate(user.id, { canDelete: !user.canDelete })}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                      title="Alternar Exclusão"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => onDelete(user.id)}
+                      className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      title="Remover Usuário"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {users.length === 0 && (
+                <div className="text-center py-8 text-slate-400 text-xs font-medium italic">
+                  Nenhum usuário adicional cadastrado.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
     )
   );
 }

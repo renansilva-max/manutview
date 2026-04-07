@@ -26,8 +26,6 @@ interface MachineRowProps {
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
   isAuthenticated: boolean;
-  onStartDowntime: () => void;
-  onFinishDowntime: () => void;
   onClick: (machine: Machine) => void;
   onEditRecord: (type: 'production' | 'downtime', record: any) => void;
 }
@@ -39,8 +37,6 @@ export const MachineRow: React.FC<MachineRowProps> = ({
   production, 
   downtime,
   isAuthenticated,
-  onStartDowntime,
-  onFinishDowntime,
   onClick,
   onEditRecord
 }) => {
@@ -54,14 +50,36 @@ export const MachineRow: React.FC<MachineRowProps> = ({
     [selectedDate, production, downtime, machine.id, currentTime]
   );
 
-  const isActiveDowntime = useMemo(() => {
+  const activeDowntime = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    return selectedDate === today && downtime.some(d => d.machineId === machine.id && d.date === today && !d.endTime);
+    return downtime.find(d => d.machineId === machine.id && d.date === today && !d.endTime);
   }, [selectedDate, downtime, machine.id]);
 
+  const isActiveDowntime = !!activeDowntime;
+
+  const calculateSeconds = (start: string, end: string) => {
+    try {
+      const startDate = new Date(`${selectedDate}T${start.length === 5 ? start + ':00' : start}`);
+      const endDate = new Date(`${selectedDate}T${end.length === 5 ? end + ':00' : end}`);
+      let diff = (endDate.getTime() - startDate.getTime()) / 1000;
+      return diff < 0 ? diff + 86400 : diff;
+    } catch (e) { return 0; }
+  };
+
+  const formatChronometer = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.floor(totalSeconds % 60);
+    if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const currentDurationSeconds = activeDowntime ? calculateSeconds(activeDowntime.startTime, currentTime) : 0;
+
   const formatMinutes = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
+    const roundedMins = Math.round(mins);
+    const h = Math.floor(roundedMins / 60);
+    const m = roundedMins % 60;
     return `${h}h${m}m`;
   };
 
@@ -91,10 +109,17 @@ export const MachineRow: React.FC<MachineRowProps> = ({
                 OEE: {(stats.oee * 100).toFixed(0)}%
               </div>
               <div className={cn(
-                "px-1.5 py-0.5 rounded-[4px] text-[9px] font-black uppercase tracking-tighter",
-                isActiveDowntime ? "bg-rose-100 text-rose-700 border border-rose-200" : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                "px-1.5 py-0.5 rounded-[4px] text-[9px] font-black uppercase tracking-tighter flex items-center gap-1 transition-all",
+                isActiveDowntime 
+                  ? "bg-rose-100 text-rose-700 border border-rose-200" 
+                  : "bg-emerald-100 text-emerald-700 border border-emerald-200"
               )}>
-                {isActiveDowntime ? "Parada" : "Ativa"}
+                {isActiveDowntime ? (
+                  <>
+                    <span className="animate-pulse">Parada:</span>
+                    <span className="font-mono">{formatChronometer(currentDurationSeconds)}</span>
+                  </>
+                ) : "Ativa"}
               </div>
             </div>
           </div>
@@ -167,35 +192,6 @@ export const MachineRow: React.FC<MachineRowProps> = ({
             })}
           </div>
         </div>
-
-        {/* Quick Actions - Compact */}
-        {isAuthenticated && (
-          <div className="flex gap-2 w-full md:w-auto">
-            {!isActiveDowntime ? (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStartDowntime();
-                }}
-                className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold transition-all border border-rose-200"
-              >
-                <Wrench className="w-3 h-3" />
-                Parar
-              </button>
-            ) : (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFinishDowntime();
-                }}
-                className="flex-1 md:flex-none flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-xs font-bold transition-all shadow-sm"
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                Voltar
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

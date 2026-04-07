@@ -1,5 +1,15 @@
 {
   "entities": {
+    "ProductionLine": {
+      "title": "ProductionLine",
+      "description": "Production line grouping machines",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
     "Machine": {
       "title": "Machine",
       "description": "Industrial machine configuration",
@@ -7,10 +17,11 @@
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
+        "productionLineId": { "type": "string" },
         "theoreticalProductionPerHour": { "type": "number" },
         "hourlyGoal": { "type": "number" }
       },
-      "required": ["id", "name", "theoreticalProductionPerHour"]
+      "required": ["id", "name", "productionLineId", "theoreticalProductionPerHour"]
     },
     "ProductionRecord": {
       "title": "ProductionRecord",
@@ -41,9 +52,36 @@
         "observation": { "type": "string" }
       },
       "required": ["id", "machineId", "date", "startTime"]
+    },
+    "DowntimeReason": {
+      "title": "DowntimeReason",
+      "description": "Configurable downtime reason with color",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "name", "color"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User permissions and role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "canEdit": { "type": "boolean" },
+        "canDelete": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["admin", "user"] }
+      },
+      "required": ["email", "canEdit", "canDelete", "role"]
     }
   },
   "firestore": {
+    "/productionLines/{lineId}": {
+      "schema": "ProductionLine",
+      "description": "Collection of production lines"
+    },
     "/machines/{machineId}": {
       "schema": "Machine",
       "description": "Collection of industrial machines"
@@ -55,6 +93,14 @@
     "/downtime/{downtimeId}": {
       "schema": "DowntimeRecord",
       "description": "Collection of downtime records"
+    },
+    "/downtimeReasons/{reasonId}": {
+      "schema": "DowntimeReason",
+      "description": "Collection of configurable downtime reasons"
+    },
+    "/userProfiles/{profileId}": {
+      "schema": "UserProfile",
+      "description": "Collection of user permissions"
     }
   }
 }

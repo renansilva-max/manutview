@@ -47,14 +47,36 @@ export const MachineCard: React.FC<MachineCardProps> = ({
     [selectedDate, production, downtime, machine, currentTime]
   );
 
-  const isActiveDowntime = useMemo(() => {
+  const activeDowntime = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    return selectedDate === today && downtime.some(d => d.machineId === machine.id && d.date === today && !d.endTime);
+    return downtime.find(d => d.machineId === machine.id && d.date === today && !d.endTime);
   }, [selectedDate, downtime, machine.id]);
 
+  const isActiveDowntime = !!activeDowntime;
+
+  const calculateSeconds = (start: string, end: string) => {
+    try {
+      const startDate = new Date(`${selectedDate}T${start.length === 5 ? start + ':00' : start}`);
+      const endDate = new Date(`${selectedDate}T${end.length === 5 ? end + ':00' : end}`);
+      let diff = (endDate.getTime() - startDate.getTime()) / 1000;
+      return diff < 0 ? diff + 86400 : diff;
+    } catch (e) { return 0; }
+  };
+
+  const formatChronometer = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.floor(totalSeconds % 60);
+    if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const currentDurationSeconds = activeDowntime ? calculateSeconds(activeDowntime.startTime, currentTime) : 0;
+
   const formatMinutes = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
+    const roundedMins = Math.round(mins);
+    const h = Math.floor(roundedMins / 60);
+    const m = roundedMins % 60;
     return h > 0 ? `${h}h ${m}m` : `${m}m`;
   };
 
@@ -175,6 +197,32 @@ export const MachineCard: React.FC<MachineCardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Active Downtime Timer */}
+      {isActiveDowntime && (
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            onFinishDowntime();
+          }}
+          className="mx-5 mb-5 p-4 bg-rose-50 border-2 border-rose-500 rounded-2xl flex flex-col gap-1 cursor-pointer hover:scale-[1.02] transition-transform active:scale-95 group/timer"
+          title="Clique para finalizar esta parada e retomar a operação"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+              <span className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Parado por: {activeDowntime.type}</span>
+            </div>
+            <div className="opacity-0 group-hover/timer:opacity-100 transition-opacity bg-white/50 p-1 rounded-full">
+              <CheckCircle2 className="w-3 h-3 text-rose-600" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-rose-400 uppercase">Tempo Decorrido:</span>
+            <span className="text-xl font-black font-mono text-rose-700">{formatChronometer(currentDurationSeconds)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       {isAuthenticated && (

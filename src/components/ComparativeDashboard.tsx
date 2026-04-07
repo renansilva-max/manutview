@@ -51,6 +51,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
         { start: selectedDate, end: selectedDate }
       );
       return {
+        id: m.id,
         name: m.name,
         producao: stats.totalProduction,
         operacional: Math.round(stats.totalOperationalMinutes / 60 * 10) / 10,
@@ -95,7 +96,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
       {/* Status Summary - Always Visible */}
       <div className="flex flex-wrap gap-2">
         {data.map((m, idx) => (
-          <div key={`status-${m.name}-${idx}`} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 shadow-sm">
+          <div key={`status-${m.id || idx}`} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 shadow-sm">
             <div className={cn(
               "w-2 h-2 rounded-full animate-pulse",
               m.status === 'Manutenção' ? "bg-rose-500" : "bg-emerald-500"

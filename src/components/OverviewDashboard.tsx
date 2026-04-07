@@ -69,8 +69,9 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
   }, [production, downtime, selectedDate, currentTime]);
 
   const formatDuration = (minutes: number) => {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
+    const totalMinutes = Math.round(minutes);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
     return `${h.toString().padStart(2, '0')}h${m.toString().padStart(2, '0')}`;
   };
 
