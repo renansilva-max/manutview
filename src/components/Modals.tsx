@@ -1,22 +1,23 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome, Wrench, Upload, Database } from 'lucide-react';
+import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome, Wrench, Upload, Database, Plus } from 'lucide-react';
 import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { Machine, ProductionRecord, DowntimeRecord, MachineStats, DowntimeReason } from '../types';
+import { Machine, ProductionRecord, DowntimeRecord, MachineStats, DowntimeReason, AuditLog } from '../types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
-import { calculateStats, DAY_START, DAY_END, timeToMinutes } from '../utils';
+import { calculateStats, DAY_START, DAY_END, timeToMinutes, formatDuration } from '../utils';
 import { cn } from '../lib/utils';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
-export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex = "z-50" }: { title: string, onClose: () => void, children: React.ReactNode, maxWidth?: string, zIndex?: string }) {
+export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex = "z-50" }: { title: string, onClose?: () => void, children: React.ReactNode, maxWidth?: string, zIndex?: string }) {
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && onClose) onClose();
       }}
       className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm`}
     >
@@ -28,9 +29,11 @@ export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex 
       >
         <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
+          {onClose && (
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <X className="w-5 h-5 text-slate-400" />
+            </button>
+          )}
         </div>
         <div className="p-6 overflow-y-auto">
           {children}
@@ -211,7 +214,7 @@ export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines
   );
 }
 
-export function LoginModal({ isOpen, onClose, onLogin }: any) {
+export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -219,22 +222,52 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username === 'renan.silva' && password === 'Filigrana123') {
-      onLogin(username);
+    
+    // Check if user exists in registered users
+    const user = users.find((u: any) => 
+      (u.email.toLowerCase() === username.toLowerCase() || u.email.split('@')[0].toLowerCase() === username.toLowerCase()) &&
+      u.password === password
+    );
+
+    if (user) {
+      onLogin(user.email);
       onClose();
     } else {
-      setError('Usuário ou senha incorretos');
+      // Check if it's the master user (fallback if not in DB yet)
+      if (username === 'renan.silva' && password === 'Filigrana123') {
+        onLogin(username);
+        onClose();
+      } else {
+        const userExists = users.some((u: any) => 
+          u.email.toLowerCase() === username.toLowerCase() || 
+          u.email.split('@')[0].toLowerCase() === username.toLowerCase()
+        );
+        
+        if (userExists) {
+          setError('Senha incorreta.');
+        } else {
+          setError('Usuário não cadastrado.');
+        }
+      }
     }
   };
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError('');
-    console.log('Starting Google login...');
     try {
       const result = await signInWithPopup(auth, googleProvider);
-      console.log('Login successful:', result.user.email);
-      onClose();
+      const email = result.user.email?.toLowerCase();
+      
+      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+      const isRegistered = users.some((u: any) => u.email.toLowerCase() === email) || allowedEmails.includes(email || '');
+      
+      if (!isRegistered) {
+        await auth.signOut();
+        setError('Usuário não cadastrado.');
+      } else {
+        onClose();
+      }
     } catch (err: any) {
       console.error('Login error:', err);
       if (err.code === 'auth/popup-blocked') {
@@ -253,7 +286,7 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
 
   return (
     isOpen && (
-      <Modal title="Acesso Restrito" onClose={onClose}>
+      <Modal title="Acesso Restrito" onClose={isMandatory ? undefined : onClose}>
         <div className="space-y-6">
             <div className="flex justify-center">
               <div className="bg-slate-100 p-4 rounded-full">
@@ -294,13 +327,13 @@ export function LoginModal({ isOpen, onClose, onLogin }: any) {
                 <div className="w-full border-t border-slate-200"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-400 font-bold">Ou acesso legado</span>
+                <span className="bg-white px-2 text-slate-400 font-bold">Ou entrar com usuário e senha</span>
               </div>
             </div>
             
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-              <p className="text-[10px] text-amber-700 font-medium leading-tight">
-                <strong>Aviso:</strong> O acesso legado permite apenas visualização e testes locais. Alterações não serão salvas no banco de dados compartilhado.
+            <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+              <p className="text-[10px] text-blue-700 font-medium leading-tight">
+                <strong>Acesso Restrito:</strong> Apenas usuários previamente cadastrados pelo administrador podem acessar o sistema.
               </p>
             </div>
 
@@ -812,12 +845,12 @@ export function DowntimeReasonManagementModal({ isOpen, reasons, onClose, onAdd,
   );
 }
 
-export function ProductionModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete }: any) {
+export function ProductionModal({ isOpen, machines, date, editingData, onClose, onSave, onDelete, initialMachineId }: any) {
   const sortedMachines = useMemo(() => {
     return [...machines].sort((a, b) => a.name.localeCompare(b.name));
   }, [machines]);
 
-  const [machineId, setMachineId] = useState(editingData?.machineId || sortedMachines[0]?.id || '');
+  const [machineId, setMachineId] = useState(editingData?.machineId || initialMachineId || sortedMachines[0]?.id || '');
   const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
   const [endTime, setEndTime] = useState(editingData?.endTime || DAY_END);
   const [quantity, setQuantity] = useState(editingData?.quantity?.toString() || '');
@@ -936,12 +969,12 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
   );
 }
 
-export function DowntimeModal({ isOpen, machines, date, reasons, editingData, onClose, onSave, onDelete }: any) {
+export function DowntimeModal({ isOpen, machines, date, reasons, editingData, onClose, onSave, onDelete, initialMachineId }: any) {
   const sortedMachines = useMemo(() => {
     return [...machines].sort((a, b) => a.name.localeCompare(b.name));
   }, [machines]);
 
-  const [machineId, setMachineId] = useState(editingData?.machineId || sortedMachines[0]?.id || '');
+  const [machineId, setMachineId] = useState(editingData?.machineId || initialMachineId || sortedMachines[0]?.id || '');
   const [startTime, setStartTime] = useState(editingData?.startTime || DAY_START);
   const [endTime, setEndTime] = useState(editingData?.endTime || '');
   const [type, setType] = useState(editingData?.type || reasons?.[0]?.name || 'Mecânica');
@@ -1079,6 +1112,8 @@ export function MachineDetailModal({
   onEditDowntime, 
   onDeleteDowntime,
   onUpdateMachine,
+  onAddProduction,
+  onAddDowntime,
   isAuthenticated
 }: any) {
   const [activeTab, setActiveTab] = useState<'producao' | 'intervencoes'>('producao');
@@ -1151,7 +1186,7 @@ export function MachineDetailModal({
               </div>
             </div>
 
-            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-6">
+            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-4">
               <button 
                 onClick={() => setActiveTab('producao')}
                 className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'producao' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
@@ -1165,6 +1200,28 @@ export function MachineDetailModal({
                 Intervenções
               </button>
             </div>
+
+            {isAuthenticated && (
+              <div className="mb-4">
+                {activeTab === 'producao' ? (
+                  <button 
+                    onClick={() => onAddProduction(machine.id)}
+                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar Produção
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => onAddDowntime(machine.id)}
+                    className="w-full py-3 bg-rose-600 text-white rounded-xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Wrench className="w-4 h-4" />
+                    Adicionar Parada
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 max-h-[50vh]">
               {activeTab === 'producao' ? (
@@ -1399,9 +1456,9 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
         tableData.push([
           m.name,
           stats.totalProduction.toString(),
-          `${(stats.totalOperationalMinutes / 60).toFixed(1)}h`,
-          `${(stats.totalDowntimeMinutes / 60).toFixed(1)}h`,
-          `${(stats.totalAvailableMinutes / 60).toFixed(1)}h`,
+          formatDuration(stats.totalOperationalMinutes),
+          formatDuration(stats.totalDowntimeMinutes),
+          formatDuration(stats.totalAvailableMinutes),
           `${(stats.availability * 100).toFixed(1)}%`,
           `${(stats.oee * 100).toFixed(1)}%`
         ]);
@@ -1422,9 +1479,9 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
       tableData.push([
         { content: `TOTAL ${line.name.toUpperCase()}`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
         { content: lineTotalProd.toString(), styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
-        { content: `${(lineTotalOp / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
-        { content: `${(lineTotalDown / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
-        { content: `${(lineTotalAvail / 60).toFixed(1)}h`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: formatDuration(lineTotalOp), styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: formatDuration(lineTotalDown), styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
+        { content: formatDuration(lineTotalAvail), styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
         { content: `${((lineTotalOp / (lineTotalAvail || 1)) * 100).toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } },
         { content: `${((lineOEEAccum / lineMachines.length) * 100).toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [248, 250, 252] } }
       ]);
@@ -1459,7 +1516,7 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
 
     const reasonData = Object.entries(downtimeByReason)
       .sort((a, b) => b[1] - a[1])
-      .map(([type, duration]) => [type, `${(duration / 60).toFixed(1)}h`]);
+      .map(([type, duration]) => [type, formatDuration(duration)]);
 
     if (reasonData.length > 0) {
       const finalYMain = (doc as any).lastAutoTable.finalY + 15;
@@ -1488,7 +1545,7 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
     
     doc.setFontSize(10);
     doc.text(`Total Produzido: ${grandTotalProd} unidades`, 14, finalY + 10);
-    doc.text(`Tempo Total Operação: ${(grandTotalOp / 60).toFixed(1)} horas`, 14, finalY + 17);
+    doc.text(`Tempo Total Operação: ${formatDuration(grandTotalOp)}`, 14, finalY + 17);
     doc.text(`OEE Médio: ${(avgOEE * 100).toFixed(1)}%`, 14, finalY + 24);
 
     doc.save(`relatorio-producao-${startDate}-a-${endDate}.pdf`);
@@ -1609,6 +1666,9 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
 
 export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, onDelete }: any) {
   const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [accessType, setAccessType] = useState<'google' | 'manual'>('google');
+  const [newRole, setNewRole] = useState<'admin' | 'user' | 'viewer'>('user');
   const [newCanEdit, setNewCanEdit] = useState(true);
   const [newCanDelete, setNewCanDelete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -1619,11 +1679,14 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
     try {
       await onAdd({
         email: newEmail.toLowerCase().trim(),
-        canEdit: newCanEdit,
-        canDelete: newCanDelete,
-        role: 'user'
+        password: accessType === 'manual' ? newPassword : undefined,
+        canEdit: newRole === 'viewer' ? false : newCanEdit,
+        canDelete: newRole === 'viewer' ? false : newCanDelete,
+        role: newRole
       });
       setNewEmail('');
+      setNewPassword('');
+      setNewRole('user');
     } catch (error) {
       console.error("Error adding user:", error);
     } finally {
@@ -1638,33 +1701,89 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
           <div className="p-4 bg-slate-50 rounded-2xl space-y-4">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Adicionar Novo Usuário</h3>
             <div className="space-y-3">
+              <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+                <button 
+                  onClick={() => setAccessType('google')}
+                  className={cn(
+                    "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
+                    accessType === 'google' ? "bg-blue-500 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
+                  )}
+                >
+                  Login Google
+                </button>
+                <button 
+                  onClick={() => setAccessType('manual')}
+                  className={cn(
+                    "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
+                    accessType === 'manual' ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
+                  )}
+                >
+                  Usuário/Senha
+                </button>
+              </div>
+
               <input 
-                type="email" 
-                placeholder="E-mail do usuário"
+                type="text" 
+                placeholder={accessType === 'google' ? "E-mail do Google" : "Nome de Usuário"}
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
               />
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={newCanEdit}
-                    onChange={(e) => setNewCanEdit(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span className="text-xs font-bold text-slate-600">Pode Editar</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={newCanDelete}
-                    onChange={(e) => setNewCanDelete(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span className="text-xs font-bold text-slate-600">Pode Excluir</span>
-                </label>
+              
+              {accessType === 'manual' && (
+                <input 
+                  type="text" 
+                  placeholder="Senha de acesso"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+                />
+              )}
+              
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Perfil / Role</label>
+                <select 
+                  value={newRole}
+                  onChange={(e: any) => {
+                    const role = e.target.value;
+                    setNewRole(role);
+                    if (role === 'viewer') {
+                      setNewCanEdit(false);
+                      setNewCanDelete(false);
+                    } else if (role === 'admin') {
+                      setNewCanEdit(true);
+                      setNewCanDelete(true);
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+                >
+                  <option value="admin">Administrador</option>
+                  <option value="user">Líder / Operador</option>
+                  <option value="viewer">Visualizador</option>
+                </select>
               </div>
+              {newRole !== 'viewer' && (
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={newCanEdit}
+                      onChange={(e) => setNewCanEdit(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs font-bold text-slate-600">Pode Editar</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={newCanDelete}
+                      onChange={(e) => setNewCanDelete(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs font-bold text-slate-600">Pode Excluir</span>
+                  </label>
+                </div>
+              )}
               <button 
                 onClick={handleAdd}
                 disabled={isLoading || !newEmail}
@@ -1678,10 +1797,21 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
           <div className="space-y-3">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Usuários Cadastrados</h3>
             <div className="max-h-64 overflow-y-auto space-y-2 pr-2">
-              {users.map((user: any) => (
-                <div key={user.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
+              {users.map((user: any, idx: number) => (
+                <div key={`${user.id}-${idx}`} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
                   <div className="flex flex-col gap-1">
-                    <span className="text-sm font-bold text-slate-700">{user.email}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-700">{user.email}</span>
+                      <span className={cn(
+                        "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
+                        user.role === 'admin' ? "bg-purple-100 text-purple-700" :
+                        user.role === 'viewer' ? "bg-blue-100 text-blue-700" :
+                        "bg-slate-100 text-slate-600"
+                      )}>
+                        {user.role}
+                      </span>
+                    </div>
+                    {user.password && <span className="text-[10px] text-slate-400">Senha: {user.password}</span>}
                     <div className="flex gap-2">
                       <span className={cn(
                         "text-[9px] font-black uppercase px-1.5 py-0.5 rounded",
@@ -1699,15 +1829,32 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                   </div>
                   <div className="flex items-center gap-2">
                     <button 
+                      onClick={() => {
+                        const roles: ('admin' | 'user' | 'viewer')[] = ['admin', 'user', 'viewer'];
+                        const nextRole = roles[(roles.indexOf(user.role) + 1) % roles.length];
+                        onUpdate(user.id, { 
+                          role: nextRole,
+                          canEdit: nextRole === 'viewer' ? false : (nextRole === 'admin' ? true : user.canEdit),
+                          canDelete: nextRole === 'viewer' ? false : (nextRole === 'admin' ? true : user.canDelete)
+                        });
+                      }}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      title="Alternar Perfil"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
+                    <button 
                       onClick={() => onUpdate(user.id, { canEdit: !user.canEdit })}
-                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                      disabled={user.role === 'viewer' || user.role === 'admin'}
+                      className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all disabled:opacity-30"
                       title="Alternar Edição"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => onUpdate(user.id, { canDelete: !user.canDelete })}
-                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                      disabled={user.role === 'viewer' || user.role === 'admin'}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-30"
                       title="Alternar Exclusão"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1727,6 +1874,121 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                   Nenhum usuário adicional cadastrado.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </Modal>
+    )
+  );
+}
+
+export function AuditLogModal({ isOpen, onClose, logs }: { isOpen: boolean, onClose: () => void, logs: AuditLog[] }) {
+  const [filterDate, setFilterDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  
+  const filteredLogs = logs.filter(log => log.timestamp.startsWith(filterDate));
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text("Logs de Auditoria", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Data: ${format(parseISO(filterDate), 'dd/MM/yyyy')}`, 14, 28);
+
+    const tableData = filteredLogs.map(log => [
+      format(parseISO(log.timestamp), 'HH:mm:ss'),
+      log.userEmail,
+      log.action,
+      log.entityType,
+      log.details
+    ]);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Hora', 'Usuário', 'Ação', 'Entidade', 'Detalhes']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [30, 41, 59] },
+      styles: { fontSize: 8 }
+    });
+
+    doc.save(`logs-auditoria-${filterDate}.pdf`);
+  };
+
+  const exportExcel = () => {
+    const data = filteredLogs.map(log => ({
+      Data: format(parseISO(log.timestamp), 'dd/MM/yyyy HH:mm:ss'),
+      Usuário: log.userEmail,
+      Ação: log.action,
+      Entidade: log.entityType,
+      Detalhes: log.details
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Logs");
+    XLSX.writeFile(wb, `logs-auditoria-${filterDate}.xlsx`);
+  };
+
+  return (
+    isOpen && (
+      <Modal title="Logs de Auditoria" onClose={onClose} maxWidth="max-w-4xl">
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row gap-4 justify-between items-end">
+            <div className="space-y-2">
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Filtrar Data</label>
+              <input 
+                type="date" 
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:ring-2 focus:ring-brand-primary/20 transition-all"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold hover:bg-emerald-100 transition-all">
+                <Download className="w-4 h-4" /> Excel
+              </button>
+              <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 rounded-xl text-sm font-bold hover:bg-rose-100 transition-all">
+                <FileText className="w-4 h-4" /> PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+            <div className="max-h-[500px] overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-white border-b border-slate-200 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Hora</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuário</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Ação</th>
+                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Detalhes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-slate-400 font-medium italic">Nenhum log encontrado para esta data.</td>
+                    </tr>
+                  ) : (
+                    filteredLogs.map((log, idx) => (
+                      <tr key={`${log.id}-${idx}`} className="hover:bg-white transition-colors">
+                        <td className="px-4 py-3 text-xs font-mono text-slate-500">{format(parseISO(log.timestamp), 'HH:mm:ss')}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-slate-700">{log.userEmail}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn(
+                            "text-[10px] font-black px-2 py-0.5 rounded-full uppercase",
+                            log.action === 'CREATE' ? "bg-emerald-100 text-emerald-600" :
+                            log.action === 'UPDATE' ? "bg-blue-100 text-blue-600" :
+                            "bg-rose-100 text-rose-600"
+                          )}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600">{log.details}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

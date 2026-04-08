@@ -19,6 +19,10 @@ export type ProductionRecord = {
   endTime: string; // HH:mm
   quantity?: number;
   scrapQuantity?: number; // For Quality calculation
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type DowntimeType = 'Mecânica' | 'Elétrica' | 'Outros';
@@ -37,6 +41,10 @@ export type DowntimeRecord = {
   endTime?: string; // HH:mm
   type: DowntimeType | string;
   observation?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type TimelineSegment = {
@@ -64,7 +72,19 @@ export type MachineStats = {
 export type UserProfile = {
   id: string;
   email: string;
+  password?: string;
   canEdit: boolean;
   canDelete: boolean;
-  role: 'admin' | 'user';
+  role: 'admin' | 'user' | 'viewer';
+};
+
+export type AuditLog = {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userEmail: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  entityType: 'PRODUCTION' | 'DOWNTIME' | 'MACHINE' | 'LINE' | 'REASON' | 'USER' | 'CONFIG';
+  entityId: string;
+  details: string;
 };

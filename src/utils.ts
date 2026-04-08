@@ -4,13 +4,22 @@ import { ProductionRecord, DowntimeRecord, TimelineSegment, Machine, MachineStat
 export const DAY_START = '05:00';
 export const DAY_END = '23:00';
 
+export const generateId = () => Math.random().toString(36).substr(2, 9);
+
 export const calculateSeconds = (start: string, end: string) => {
   try {
-    const startDate = parse(start, start.length > 5 ? 'HH:mm:ss' : 'HH:mm', new Date());
-    const endDate = parse(end, end.length > 5 ? 'HH:mm:ss' : 'HH:mm', new Date());
+    // Standardize to HH:mm by taking only the first 5 characters
+    const s = start.split(':').slice(0, 2).join(':');
+    const e = end.split(':').slice(0, 2).join(':');
+    
+    const startDate = parse(s, 'HH:mm', new Date());
+    const endDate = parse(e, 'HH:mm', new Date());
     
     let diffInMs = endDate.getTime() - startDate.getTime();
-    if (diffInMs < 0) diffInMs += 24 * 60 * 60 * 1000; // Handle midnight crossing
+    
+    // For this application, we don't expect records to cross midnight 
+    // within the same day's calculation logic. If end < start, it's 0.
+    if (diffInMs < 0) return 0;
     
     return Math.floor(diffInMs / 1000);
   } catch (e) {
@@ -21,12 +30,8 @@ export const calculateSeconds = (start: string, end: string) => {
 export const formatChronometer = (totalSeconds: number) => {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
 
-  if (h > 0) {
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
 export const formatTotalTime = (totalSeconds: number) => {
@@ -36,22 +41,24 @@ export const formatTotalTime = (totalSeconds: number) => {
   return `${h.toString().padStart(2, '0')}h${m.toString().padStart(2, '0')}`;
 };
 
+export const formatDuration = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+};
+
 export function timeToMinutes(time: string): number {
+  if (!time) return 0;
   const parts = time.split(':').map(Number);
   const hours = parts[0] || 0;
   const minutes = parts[1] || 0;
-  const seconds = parts[2] || 0;
-  return hours * 60 + minutes + seconds / 60;
+  // Ignore seconds for consistency as requested
+  return hours * 60 + minutes;
 }
 
 export function minutesToTime(minutes: number): string {
-  const totalSeconds = Math.round(minutes * 60);
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  const s = totalSeconds % 60;
-  if (s > 0) {
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 

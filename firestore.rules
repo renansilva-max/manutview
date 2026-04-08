@@ -72,6 +72,10 @@ service cloud.firestore {
              data.keys().hasOnly(['id', 'name', 'productionLineId', 'theoreticalProductionPerHour', 'hourlyGoal']);
     }
 
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
     function isValidProduction(data) {
       return data.keys().hasAll(['id', 'machineId', 'date', 'startTime', 'endTime']) &&
              data.id is string &&
@@ -81,7 +85,11 @@ service cloud.firestore {
              data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$") &&
              (!('quantity' in data) || (data.quantity is number && data.quantity >= 0)) &&
              (!('scrapQuantity' in data) || (data.scrapQuantity is number && data.scrapQuantity >= 0)) &&
-             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'quantity', 'scrapQuantity']);
+             (!('createdBy' in data) || (data.createdBy is string)) &&
+             (!('createdAt' in data) || (data.createdAt is string)) &&
+             (!('updatedBy' in data) || (data.updatedBy is string)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string)) &&
+             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'quantity', 'scrapQuantity', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt']);
     }
 
     function isValidDowntime(data) {
@@ -93,7 +101,24 @@ service cloud.firestore {
              data.type is string &&
              (!('endTime' in data) || (data.endTime is string && data.endTime.matches("^\\d{2}:\\d{2}(:\\d{2})?$"))) &&
              (!('observation' in data) || (data.observation is string)) &&
-             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'type', 'observation']);
+             (!('createdBy' in data) || (data.createdBy is string)) &&
+             (!('createdAt' in data) || (data.createdAt is string)) &&
+             (!('updatedBy' in data) || (data.updatedBy is string)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string)) &&
+             data.keys().hasOnly(['id', 'machineId', 'date', 'startTime', 'endTime', 'type', 'observation', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt']);
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'userId', 'userEmail', 'action', 'entityType', 'entityId', 'details']) &&
+             data.id is string &&
+             data.timestamp is string &&
+             data.userId is string &&
+             data.userEmail is string &&
+             data.action in ['CREATE', 'UPDATE', 'DELETE'] &&
+             data.entityType in ['PRODUCTION', 'DOWNTIME', 'MACHINE', 'LINE', 'REASON'] &&
+             data.entityId is string &&
+             data.details is string &&
+             data.keys().hasOnly(['id', 'timestamp', 'userId', 'userEmail', 'action', 'entityType', 'entityId', 'details']);
     }
 
     function isValidUserProfile(data) {
@@ -150,6 +175,12 @@ service cloud.firestore {
     match /userProfiles/{profileId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isValidAuditLog(request.resource.data);
+      allow update, delete: if false;
     }
   }
 }

@@ -240,7 +240,7 @@ export function OperatorDashboard({
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4 border-l-4 border-emerald-500/20 py-2">
                     {lineMachines.map((machine, machineIdx) => (
                       <OperatorMachineCard 
-                        key={`expanded-machine-${machine.id || machineIdx}`} 
+                        key={`expanded-machine-${line.id}-${machine.id || machineIdx}`} 
                         machine={machine} 
                         machineIdx={machineIdx} 
                         isCompact={true} 

@@ -16,7 +16,8 @@ import {
   Clock,
   LogIn,
   LogOut,
-  Monitor
+  Monitor,
+  Database
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { 
@@ -25,7 +26,8 @@ import {
   DowntimeRecord,
   ProductionLine,
   DowntimeReason,
-  UserProfile
+  UserProfile,
+  AuditLog
 } from './types';
 import { MachineRow } from './components/MachineRow';
 import { MachineCard } from './components/MachineCard';
@@ -45,7 +47,8 @@ import {
   SettingsModal,
   FilterModal,
   DowntimeReasonManagementModal,
-  UserManagementModal
+  UserManagementModal,
+  AuditLogModal
 } from './components/Modals';
 import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
@@ -63,6 +66,7 @@ import {
   handleFirestoreError 
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { generateId, formatDuration } from './utils';
 
 // Error Boundary Component
 class ErrorBoundary extends Component<React.PropsWithChildren<{}>, { hasError: boolean, errorInfo: string | null }> {
@@ -133,13 +137,6 @@ const INITIAL_DOWNTIME_REASONS: DowntimeReason[] = [
   { id: 'reason-4', name: 'Falta de Material', color: '#4b5563' },
 ];
 
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return Math.random().toString(36).substring(2, 11);
-};
-
 export default function App() {
   return (
     <ErrorBoundary>
@@ -156,6 +153,7 @@ function AppContent() {
   const [downtime, setDowntime] = useState<DowntimeRecord[]>([]);
   const [downtimeReasons, setDowntimeReasons] = useState<DowntimeReason[]>(INITIAL_DOWNTIME_REASONS);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [currentTime, setCurrentTime] = useState(format(new Date(), 'HH:mm:ss'));
@@ -169,10 +167,20 @@ function AppContent() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
 
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
+
+    const safeFormatDate = (dateStr: string | undefined) => {
+      if (!dateStr) return '-';
+      try {
+        return format(parseISO(dateStr), 'dd/MM/yyyy HH:mm');
+      } catch (e) {
+        return dateStr;
+      }
+    };
 
     // Machines Sheet
     const machinesWS = XLSX.utils.json_to_sheet(machines.map(m => ({
@@ -192,7 +200,11 @@ function AppContent() {
         'Hora Início': p.startTime,
         'Hora Fim': p.endTime,
         'Quantidade Produzida': p.quantity || 0,
-        'Quantidade Refugo': p.scrapQuantity || 0
+        'Quantidade Refugo': p.scrapQuantity || 0,
+        'Cadastrado por': p.createdBy || '-',
+        'Data Cadastro': safeFormatDate(p.createdAt),
+        'Atualizado por': p.updatedBy || '-',
+        'Data Atualização': safeFormatDate(p.updatedAt)
       };
     }));
     XLSX.utils.book_append_sheet(wb, productionWS, "Produção");
@@ -206,31 +218,64 @@ function AppContent() {
         'Hora Início': d.startTime,
         'Hora Fim': d.endTime || 'Em aberto',
         Tipo: d.type,
-        Observação: d.observation || ''
+        Observação: d.observation || '',
+        'Cadastrado por': d.createdBy || '-',
+        'Data Cadastro': safeFormatDate(d.createdAt),
+        'Atualizado por': d.updatedBy || '-',
+        'Data Atualização': safeFormatDate(d.updatedAt)
       };
     }));
     XLSX.utils.book_append_sheet(wb, downtimeWS, "Paradas");
 
-    XLSX.writeFile(wb, `Filigrana_Monitor_Dados_${format(new Date(), 'yyyy-MM-dd_HHmm')}.xlsx`);
+    XLSX.writeFile(wb, `Controle_Producao_Dados_${format(new Date(), 'yyyy-MM-dd_HHmm')}.xlsx`);
   };
 
   // Auth Sync
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
-      const isGoogleAdmin = !!(user && allowedEmails.includes(user.email || '') && user.emailVerified);
-      const isLegacyAdmin = localStorage.getItem('isAuthenticated') === 'true' && localStorage.getItem('legacyUser') === 'renan.silva';
-      
-      setIsAuthenticated(!!user || (localStorage.getItem('isAuthenticated') === 'true'));
-      setIsAdmin(isGoogleAdmin || isLegacyAdmin);
+      if (user) {
+        // Check if user is in registered profiles
+        const profile = userProfiles.find(p => p.email.toLowerCase() === user.email?.toLowerCase());
+        const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+        
+        if (profile || allowedEmails.includes(user.email || '')) {
+          setIsAuthenticated(true);
+          setCurrentUserProfile(profile || null);
+          setIsAdmin(profile?.role === 'admin' || allowedEmails.includes(user.email || ''));
+        } else {
+          // User not registered
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+          setCurrentUserProfile(null);
+          // We don't sign out automatically here to allow the UI to show "Not registered"
+          // but we won't let them in.
+        }
+      } else {
+        const legacyUser = localStorage.getItem('legacyUser');
+        const profile = userProfiles.find(p => p.email.toLowerCase() === legacyUser?.toLowerCase());
+        
+        if (localStorage.getItem('isAuthenticated') === 'true' && (profile || legacyUser === 'renan.silva')) {
+          setIsAuthenticated(true);
+          setCurrentUserProfile(profile || null);
+          setIsAdmin(profile?.role === 'admin' || legacyUser === 'renan.silva');
+        } else {
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+          setCurrentUserProfile(null);
+        }
+      }
       setIsAuthReady(true);
     });
 
     return () => unsubscribeAuth();
-  }, []);
+  }, [userProfiles]);
 
-  const [appName, setAppName] = useState('Filigrana Monitor');
-  const [appDescription, setAppDescription] = useState('Controle de Produção Têxtil');
+  const [appName, setAppName] = useState('Controle de Produção');
+  const [appDescription, setAppDescription] = useState('Monitoramento de produção e manutenção industrial');
+
+  useEffect(() => {
+    document.title = appName;
+  }, [appName]);
 
   // Data Sync
   useEffect(() => {
@@ -240,6 +285,11 @@ function AppContent() {
         if (data.name) setAppName(data.name);
         if (data.description) setAppDescription(data.description);
       }
+    });
+
+    const unsubscribeLogs = onSnapshot(collection(db, 'auditLogs'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog));
+      setAuditLogs(data.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
     });
 
     const unsubscribeLines = onSnapshot(collection(db, 'productionLines'), (snapshot) => {
@@ -306,6 +356,7 @@ function AppContent() {
     const id = generateId();
     try {
       await setDoc(doc(db, 'userProfiles', id), profile);
+      await addAuditLog('CREATE', 'USER', id, `Usuário criado: ${profile.email} (${profile.role})`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `userProfiles/${id}`);
     }
@@ -314,6 +365,8 @@ function AppContent() {
   const updateUserProfile = async (id: string, updates: Partial<UserProfile>) => {
     try {
       await updateDoc(doc(db, 'userProfiles', id), updates);
+      const user = userProfiles.find(u => u.id === id);
+      await addAuditLog('UPDATE', 'USER', id, `Usuário atualizado: ${user?.email || id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `userProfiles/${id}`);
     }
@@ -321,7 +374,9 @@ function AppContent() {
 
   const deleteUserProfile = async (id: string) => {
     try {
+      const user = userProfiles.find(u => u.id === id);
       await deleteDoc(doc(db, 'userProfiles', id));
+      await addAuditLog('DELETE', 'USER', id, `Usuário excluído: ${user?.email || id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `userProfiles/${id}`);
     }
@@ -405,16 +460,13 @@ function AppContent() {
   };
 
   // Permission helpers
-  const canEdit = isAdmin || currentUserProfile?.canEdit;
-  const canDelete = isAdmin || currentUserProfile?.canDelete;
+  const canEdit = isAdmin || (currentUserProfile?.canEdit ?? false);
+  const canDelete = isAdmin || (currentUserProfile?.canDelete ?? false);
 
-  const handleLogin = (username: string) => {
-    setIsAuthenticated(true);
+  const handleLogin = (email: string) => {
     localStorage.setItem('isAuthenticated', 'true');
-    localStorage.setItem('legacyUser', username);
-    if (username === 'renan.silva') {
-      setIsAdmin(true);
-    }
+    localStorage.setItem('legacyUser', email);
+    window.location.reload();
   };
 
   const handleLogout = async () => {
@@ -424,11 +476,33 @@ function AppContent() {
     localStorage.removeItem('isAuthenticated');
     localStorage.removeItem('legacyUser');
   };
+
+  const addAuditLog = async (action: AuditLog['action'], entityType: AuditLog['entityType'], entityId: string, details: string) => {
+    const user = auth.currentUser;
+    const legacyUser = localStorage.getItem('legacyUser');
+    const userEmail = user?.email || legacyUser || 'unknown';
+    
+    const log: AuditLog = {
+      id: generateId(),
+      timestamp: new Date().toISOString(),
+      userId: user?.uid || 'legacy',
+      userEmail: userEmail,
+      action,
+      entityType,
+      entityId,
+      details
+    };
+    try {
+      await setDoc(doc(db, 'auditLogs', log.id), log);
+    } catch (error) {
+      console.error("Error saving audit log:", error);
+    }
+  };
   
-  // Update current time every second
+  // Update current time every minute
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentTime(format(new Date(), 'HH:mm:ss'));
+      setCurrentTime(format(new Date(), 'HH:mm'));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -443,12 +517,14 @@ function AppContent() {
 
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [selectedMachineForDetail, setSelectedMachineForDetail] = useState<Machine | null>(null);
+  const [preSelectedMachineId, setPreSelectedMachineId] = useState<string | null>(null);
 
   // Data Modification Functions
   const updateAppConfig = async (name: string, description: string) => {
     if (!isAdmin) return;
     try {
       await setDoc(doc(db, 'config', 'app'), { name, description });
+      await addAuditLog('UPDATE', 'CONFIG', 'app', `Configuração do App: ${name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'config/app');
     }
@@ -460,7 +536,9 @@ function AppContent() {
       return;
     }
     try {
+      const isNew = !productionLines.find(l => l.id === line.id);
       await setDoc(doc(db, 'productionLines', line.id), line);
+      await addAuditLog(isNew ? 'CREATE' : 'UPDATE', 'LINE', line.id, `Linha: ${line.name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `productionLines/${line.id}`);
     }
@@ -486,6 +564,7 @@ function AppContent() {
       alert("Apenas o administrador pode excluir dados.");
       return;
     }
+    const line = productionLines.find(l => l.id === id);
     // Check if there are machines in this line
     const machinesInLine = machines.filter(m => m.productionLineId === id);
     if (machinesInLine.length > 0) {
@@ -494,6 +573,7 @@ function AppContent() {
     }
     try {
       await deleteDoc(doc(db, 'productionLines', id));
+      await addAuditLog('DELETE', 'LINE', id, `Linha excluída: ${line?.name || id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `productionLines/${id}`);
     }
@@ -514,6 +594,7 @@ function AppContent() {
       for (const reason of INITIAL_DOWNTIME_REASONS) {
         await setDoc(doc(db, 'downtimeReasons', reason.id), reason);
       }
+      await addAuditLog('UPDATE', 'CONFIG', 'reset', 'Restauração de dados de fábrica');
       alert("Dados restaurados com sucesso!");
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'reset-data');
@@ -526,7 +607,9 @@ function AppContent() {
       return;
     }
     try {
+      const isNew = !machines.find(m => m.id === machine.id);
       await setDoc(doc(db, 'machines', machine.id), machine);
+      await addAuditLog(isNew ? 'CREATE' : 'UPDATE', 'MACHINE', machine.id, `Máquina: ${machine.name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `machines/${machine.id}`);
     }
@@ -555,8 +638,10 @@ function AppContent() {
       alert("Apenas o administrador pode excluir dados.");
       return;
     }
+    const machine = machines.find(m => m.id === id);
     try {
       await deleteDoc(doc(db, 'machines', id));
+      await addAuditLog('DELETE', 'MACHINE', id, `Máquina excluída: ${machine?.name || id}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `machines/${id}`);
     }
@@ -568,7 +653,9 @@ function AppContent() {
       throw new Error("Unauthorized");
     }
     try {
+      const isNew = !downtimeReasons.find(r => r.id === reason.id);
       await setDoc(doc(db, 'downtimeReasons', reason.id), reason);
+      await addAuditLog(isNew ? 'CREATE' : 'UPDATE', 'REASON', reason.id, `Motivo: ${reason.name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `downtimeReasons/${reason.id}`);
     }
@@ -592,8 +679,10 @@ function AppContent() {
       alert("Apenas o administrador pode excluir motivos de parada.");
       throw new Error("Unauthorized");
     }
+    const reason = downtimeReasons.find(r => r.id === id);
     try {
       await deleteDoc(doc(db, 'downtimeReasons', id));
+      await addAuditLog('DELETE', 'REASON', id, `Motivo excluído: ${reason?.name || id}`);
       console.log("Downtime reason deleted successfully from Firestore:", id);
       alert("Motivo excluído com sucesso!");
     } catch (error) {
@@ -606,10 +695,28 @@ function AppContent() {
       alert("Você precisa estar autenticado para salvar dados.");
       return;
     }
+    
+    // Get current user email robustly
+    const userEmail = auth.currentUser?.email || localStorage.getItem('legacyUser') || 'Usuário Desconhecido';
+    const now = new Date().toISOString();
+
     try {
-      const recordId = id || Math.random().toString(36).substr(2, 9);
-      const record = { ...data, id: recordId };
+      const recordId = id || generateId();
+      // Find existing record in the full production list to preserve creation data
+      const existing = production.find(p => p.id === id);
+      
+      const record: ProductionRecord = { 
+        ...data, 
+        id: recordId,
+        createdBy: (existing?.createdBy && existing.createdBy !== '-') ? existing.createdBy : userEmail,
+        createdAt: (existing?.createdAt && existing.createdAt !== '-') ? existing.createdAt : now,
+        updatedBy: userEmail,
+        updatedAt: now
+      };
+      
       await setDoc(doc(db, 'production', recordId), record);
+      const machine = machines.find(m => m.id === data.machineId);
+      await addAuditLog(id ? 'UPDATE' : 'CREATE', 'PRODUCTION', recordId, `Produção: ${data.quantity} unid. na máquina ${machine?.name || data.machineId}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `production/${id || 'new'}`);
     }
@@ -620,8 +727,11 @@ function AppContent() {
       alert("Apenas o administrador pode excluir dados.");
       throw new Error("Unauthorized");
     }
+    const record = production.find(p => p.id === id);
     try {
       await deleteDoc(doc(db, 'production', id));
+      const machine = machines.find(m => m.id === record?.machineId);
+      await addAuditLog('DELETE', 'PRODUCTION', id, `Produção excluída: ${record?.quantity} unid. na máquina ${machine?.name || record?.machineId}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `production/${id}`);
     }
@@ -632,10 +742,28 @@ function AppContent() {
       alert("Você precisa estar autenticado para salvar dados.");
       return;
     }
+    
+    // Get current user email robustly
+    const userEmail = auth.currentUser?.email || localStorage.getItem('legacyUser') || 'Usuário Desconhecido';
+    const now = new Date().toISOString();
+
     try {
-      const recordId = id || Math.random().toString(36).substr(2, 9);
-      const record = { ...data, id: recordId };
+      const recordId = id || generateId();
+      // Find existing record in the full downtime list to preserve creation data
+      const existing = downtime.find(d => d.id === id);
+      
+      const record: DowntimeRecord = { 
+        ...data, 
+        id: recordId,
+        createdBy: (existing?.createdBy && existing.createdBy !== '-') ? existing.createdBy : userEmail,
+        createdAt: (existing?.createdAt && existing.createdAt !== '-') ? existing.createdAt : now,
+        updatedBy: userEmail,
+        updatedAt: now
+      };
+
       await setDoc(doc(db, 'downtime', recordId), record);
+      const machine = machines.find(m => m.id === data.machineId);
+      await addAuditLog(id ? 'UPDATE' : 'CREATE', 'DOWNTIME', recordId, `Parada: ${data.type} na máquina ${machine?.name || data.machineId}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `downtime/${id || 'new'}`);
     }
@@ -646,8 +774,11 @@ function AppContent() {
       alert("Apenas o administrador pode excluir dados.");
       throw new Error("Unauthorized");
     }
+    const record = downtime.find(d => d.id === id);
     try {
       await deleteDoc(doc(db, 'downtime', id));
+      const machine = machines.find(m => m.id === record?.machineId);
+      await addAuditLog('DELETE', 'DOWNTIME', id, `Parada excluída: ${record?.type} na máquina ${machine?.name || record?.machineId}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `downtime/${id}`);
     }
@@ -746,6 +877,23 @@ function AppContent() {
     document.body.removeChild(link);
   };
 
+  if (!isAuthenticated) {
+    return (
+      <LoginModal 
+        isOpen={true} 
+        onClose={() => {}} 
+        users={userProfiles}
+        isMandatory={true}
+        onLogin={(email: string) => {
+          localStorage.setItem('isAuthenticated', 'true');
+          localStorage.setItem('legacyUser', email);
+          // Trigger re-check
+          window.location.reload();
+        }} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -798,6 +946,16 @@ function AppContent() {
                 title="Configurações"
               >
                 <Settings className="w-5 h-5" />
+              </button>
+            )}
+
+            {isAdmin && (
+              <button 
+                onClick={() => setIsLogsModalOpen(true)}
+                className="p-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-all"
+                title="Logs de Auditoria"
+              >
+                <Database className="w-5 h-5" />
               </button>
             )}
 
@@ -1109,6 +1267,7 @@ function AppContent() {
             isOpen={isLoginModalOpen}
             onClose={() => setIsLoginModalOpen(false)}
             onLogin={handleLogin}
+            users={userProfiles}
           />
         )}
         {selectedMachineForDetail && (
@@ -1139,6 +1298,16 @@ function AppContent() {
               deleteRecord('downtime', id);
             }}
             onUpdateMachine={updateMachine}
+            onAddProduction={(machineId: string) => {
+              setPreSelectedMachineId(machineId);
+              setEditingRecord(null);
+              setIsProductionModalOpen(true);
+            }}
+            onAddDowntime={(machineId: string) => {
+              setPreSelectedMachineId(machineId);
+              setEditingRecord(null);
+              setIsDowntimeModalOpen(true);
+            }}
             isAuthenticated={canEdit}
           />
         )}
@@ -1172,9 +1341,11 @@ function AppContent() {
             machines={machines}
             date={selectedDate}
             editingData={editingRecord?.type === 'production' ? editingRecord.data : null}
+            initialMachineId={preSelectedMachineId}
             onClose={() => {
               setIsProductionModalOpen(false);
               setEditingRecord(null);
+              setPreSelectedMachineId(null);
             }}
             onSave={saveProduction}
             onDelete={(id: string) => deleteRecord('production', id)}
@@ -1188,9 +1359,11 @@ function AppContent() {
             date={selectedDate}
             reasons={downtimeReasons}
             editingData={editingRecord?.type === 'downtime' ? editingRecord.data : null}
+            initialMachineId={preSelectedMachineId}
             onClose={() => {
               setIsDowntimeModalOpen(false);
               setEditingRecord(null);
+              setPreSelectedMachineId(null);
             }}
             onSave={saveDowntime}
             onDelete={(id: string) => deleteRecord('downtime', id)}
@@ -1253,6 +1426,12 @@ function AppContent() {
           onAdd={addDowntimeReason}
           onUpdate={updateDowntimeReason}
           onDelete={deleteDowntimeReason}
+        />
+
+        <AuditLogModal 
+          isOpen={isLogsModalOpen}
+          onClose={() => setIsLogsModalOpen(false)}
+          logs={auditLogs}
         />
       </AnimatePresence>
 
