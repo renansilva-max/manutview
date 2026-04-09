@@ -72,6 +72,7 @@ export type MachineStats = {
 export type UserProfile = {
   id: string;
   email: string;
+  name?: string;
   password?: string;
   canEdit: boolean;
   canDelete: boolean;

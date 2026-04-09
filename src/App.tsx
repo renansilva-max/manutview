@@ -9,6 +9,8 @@ import {
   ChevronLeft, 
   ChevronRight, 
   AlertCircle, 
+  Check,
+  X,
   Factory,
   Wrench,
   LayoutGrid,
@@ -83,6 +85,8 @@ class ErrorBoundary extends Component<React.PropsWithChildren<{}>, { hasError: b
   render() {
     if (this.state.hasError) {
       let displayMessage = "Ocorreu um erro inesperado.";
+      let rawError = this.state.errorInfo;
+      
       try {
         const parsed = JSON.parse(this.state.errorInfo || "");
         if (parsed.error && parsed.error.includes("insufficient permissions")) {
@@ -99,9 +103,16 @@ class ErrorBoundary extends Component<React.PropsWithChildren<{}>, { hasError: b
               <AlertCircle className="w-8 h-8 text-rose-600" />
             </div>
             <h2 className="text-2xl font-black text-slate-800 mb-4 uppercase tracking-tight">Ops! Algo deu errado</h2>
-            <p className="text-slate-600 mb-8 font-medium leading-relaxed">
+            <p className="text-slate-600 mb-4 font-medium leading-relaxed">
               {displayMessage}
             </p>
+            {rawError && (
+              <div className="mb-8 p-3 bg-slate-50 rounded-xl border border-slate-200 text-left overflow-auto max-h-32">
+                <p className="text-[10px] font-mono text-slate-500 break-all">
+                  {rawError}
+                </p>
+              </div>
+            )}
             <button 
               onClick={() => window.location.reload()}
               className="w-full py-4 bg-brand-primary text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all"
@@ -121,6 +132,26 @@ class ErrorBoundary extends Component<React.PropsWithChildren<{}>, { hasError: b
 const INITIAL_PRODUCTION_LINES: ProductionLine[] = [
   { id: 'line-1', name: 'Etiquetas ou Filigranas' }
 ];
+
+const safeLocalStorage = {
+  getItem: (key: string) => {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  },
+  setItem: (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {}
+  },
+  removeItem: (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  }
+};
 
 const INITIAL_MACHINES: Machine[] = [
   { id: 'machine-1', name: 'Filigrana 1', productionLineId: 'line-1', theoreticalProductionPerHour: 100, hourlyGoal: 80 },
@@ -156,6 +187,8 @@ function AppContent() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [selectedEndDate, setSelectedEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [isRangeMode, setIsRangeMode] = useState(false);
   const [currentTime, setCurrentTime] = useState(format(new Date(), 'HH:mm:ss'));
   const [currentDashboard, setCurrentDashboard] = useState<'timeline' | 'summary' | 'comparative' | 'maintenance' | 'operator' | 'maintenance_ranking' | 'active_maintenance'>('timeline');
   
@@ -169,6 +202,191 @@ function AppContent() {
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
+
+  const [appName, setAppName] = useState('Controle de Produção');
+  const [appDescription, setAppDescription] = useState('Monitoramento de produção e manutenção industrial');
+  const [appIcon, setAppIcon] = useState('https://picsum.photos/seed/factory/192/192');
+  const [welcomeMessage, setWelcomeMessage] = useState('Bem-vindo ao sistema de controle de produção!');
+
+  // Modals
+  const [isLineModalOpen, setIsLineModalOpen] = useState(false);
+  const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
+  const [isProductionModalOpen, setIsProductionModalOpen] = useState(false);
+  const [isDowntimeModalOpen, setIsDowntimeModalOpen] = useState(false);
+  const [isReasonModalOpen, setIsReasonModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<{ type: 'production' | 'downtime' | 'machine', data: any } | null>(null);
+
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [selectedMachineForDetail, setSelectedMachineForDetail] = useState<Machine | null>(null);
+  const [preSelectedMachineId, setPreSelectedMachineId] = useState<string | null>(null);
+  const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
+
+  // Update current time every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(format(new Date(), 'HH:mm:ss'));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auth Sync
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Check if user is in registered profiles
+        const profile = (userProfiles || []).find(p => p && p.email?.toLowerCase() === user.email?.toLowerCase());
+        const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+        
+        if (profile || allowedEmails.includes(user.email || '')) {
+          setIsAuthenticated(true);
+          setCurrentUserProfile(profile || null);
+          setIsAdmin(profile?.role === 'admin' || allowedEmails.includes(user.email || ''));
+        } else {
+          // User not registered
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+          setCurrentUserProfile(null);
+        }
+      } else {
+        const legacyUser = safeLocalStorage.getItem('legacyUser');
+        const profile = (userProfiles || []).find(p => p && p.email?.toLowerCase() === legacyUser?.toLowerCase());
+        const isMasterFallback = legacyUser === 'renan.silva' || legacyUser === 'viewhering@manual.com';
+        
+        const isAuthStored = safeLocalStorage.getItem('isAuthenticated') === 'true';
+
+        if (isAuthStored && (profile || isMasterFallback)) {
+          setIsAuthenticated(true);
+          setCurrentUserProfile(profile || null);
+          setIsAdmin(profile?.role === 'admin' || isMasterFallback);
+        } else {
+          setIsAuthenticated(false);
+          setIsAdmin(false);
+          setCurrentUserProfile(null);
+        }
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribeAuth();
+  }, [userProfiles]);
+
+  useEffect(() => {
+    document.title = appName;
+    
+    // Update favicon and apple-touch-icon
+    const updateIcon = (rel: string, href: string) => {
+      let link = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      link.href = href;
+    };
+
+    updateIcon('icon', appIcon);
+    updateIcon('apple-touch-icon', appIcon);
+    updateIcon('shortcut icon', appIcon);
+  }, [appName, appIcon]);
+
+  // Data Sync
+  useEffect(() => {
+    const unsubscribeConfig = onSnapshot(doc(db, 'config', 'app'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.name) setAppName(data.name);
+        if (data.description) setAppDescription(data.description);
+        if (data.icon) setAppIcon(data.icon);
+        if (data.welcomeMessage) setWelcomeMessage(data.welcomeMessage);
+      }
+    }, (error) => console.warn("Config sync error:", error));
+
+    const unsubscribeUsers = onSnapshot(collection(db, 'userProfiles'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
+      setUserProfiles(data);
+      
+      if (auth.currentUser) {
+        const profile = data.find(p => p.email?.toLowerCase() === auth.currentUser?.email?.toLowerCase());
+        setCurrentUserProfile(profile || null);
+      }
+    }, (error) => console.warn("User profiles sync error:", error));
+
+    // Only sync operational data if authenticated
+    let unsubscribeLines = () => {};
+    let unsubscribeMachines = () => {};
+    let unsubscribeProduction = () => {};
+    let unsubscribeDowntime = () => {};
+    let unsubscribeReasons = () => {};
+    let unsubscribeLogs = () => {};
+
+    if (isAuthenticated) {
+      unsubscribeLogs = onSnapshot(collection(db, 'auditLogs'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog));
+        setAuditLogs(data.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+      }, (error) => console.warn("Audit logs sync error:", error));
+
+      unsubscribeLines = onSnapshot(collection(db, 'productionLines'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionLine));
+        if (data.length > 0) {
+          setProductionLines(data);
+          setSelectedLineIds(prev => prev.length === 0 ? data.map(l => l.id) : prev);
+        } else {
+          setProductionLines(prev => prev.length === 0 ? INITIAL_PRODUCTION_LINES : []);
+        }
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'productionLines'));
+
+      unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Machine));
+        if (data.length > 0) {
+          setMachines(data);
+        } else {
+          setMachines(prev => prev.length === 0 ? INITIAL_MACHINES : []);
+        }
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
+
+      unsubscribeProduction = onSnapshot(collection(db, 'production'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionRecord));
+        setProduction(data);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'production'));
+
+      unsubscribeDowntime = onSnapshot(collection(db, 'downtime'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeRecord));
+        setDowntime(data);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
+
+      unsubscribeReasons = onSnapshot(collection(db, 'downtimeReasons'), (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeReason));
+        if (data.length > 0) {
+          setDowntimeReasons(data);
+        } else {
+          setDowntimeReasons(prev => prev.length === 0 ? INITIAL_DOWNTIME_REASONS : []);
+        }
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtimeReasons'));
+    }
+
+    return () => {
+      unsubscribeConfig();
+      unsubscribeUsers();
+      unsubscribeLines();
+      unsubscribeMachines();
+      unsubscribeProduction();
+      unsubscribeDowntime();
+      unsubscribeReasons();
+      unsubscribeLogs();
+    };
+  }, [isAuthenticated, isAdmin]);
+
+  // Show welcome message after login
+  useEffect(() => {
+    const showWelcome = safeLocalStorage.getItem('showWelcome');
+    if (showWelcome === 'true' && welcomeMessage) {
+      setShowWelcomeBanner(true);
+      safeLocalStorage.removeItem('showWelcome');
+      // Auto hide after 10 seconds
+      const timer = setTimeout(() => setShowWelcomeBanner(false), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [welcomeMessage]);
 
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -230,126 +448,6 @@ function AppContent() {
     XLSX.writeFile(wb, `Controle_Producao_Dados_${format(new Date(), 'yyyy-MM-dd_HHmm')}.xlsx`);
   };
 
-  // Auth Sync
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        // Check if user is in registered profiles
-        const profile = userProfiles.find(p => p.email.toLowerCase() === user.email?.toLowerCase());
-        const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
-        
-        if (profile || allowedEmails.includes(user.email || '')) {
-          setIsAuthenticated(true);
-          setCurrentUserProfile(profile || null);
-          setIsAdmin(profile?.role === 'admin' || allowedEmails.includes(user.email || ''));
-        } else {
-          // User not registered
-          setIsAuthenticated(false);
-          setIsAdmin(false);
-          setCurrentUserProfile(null);
-          // We don't sign out automatically here to allow the UI to show "Not registered"
-          // but we won't let them in.
-        }
-      } else {
-        const legacyUser = localStorage.getItem('legacyUser');
-        const profile = userProfiles.find(p => p.email.toLowerCase() === legacyUser?.toLowerCase());
-        
-        if (localStorage.getItem('isAuthenticated') === 'true' && (profile || legacyUser === 'renan.silva')) {
-          setIsAuthenticated(true);
-          setCurrentUserProfile(profile || null);
-          setIsAdmin(profile?.role === 'admin' || legacyUser === 'renan.silva');
-        } else {
-          setIsAuthenticated(false);
-          setIsAdmin(false);
-          setCurrentUserProfile(null);
-        }
-      }
-      setIsAuthReady(true);
-    });
-
-    return () => unsubscribeAuth();
-  }, [userProfiles]);
-
-  const [appName, setAppName] = useState('Controle de Produção');
-  const [appDescription, setAppDescription] = useState('Monitoramento de produção e manutenção industrial');
-
-  useEffect(() => {
-    document.title = appName;
-  }, [appName]);
-
-  // Data Sync
-  useEffect(() => {
-    const unsubscribeConfig = onSnapshot(doc(db, 'config', 'app'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data.name) setAppName(data.name);
-        if (data.description) setAppDescription(data.description);
-      }
-    });
-
-    const unsubscribeLogs = onSnapshot(collection(db, 'auditLogs'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog));
-      setAuditLogs(data.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
-    });
-
-    const unsubscribeLines = onSnapshot(collection(db, 'productionLines'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionLine));
-      if (data.length > 0) {
-        setProductionLines(data);
-        setSelectedLineIds(prev => prev.length === 0 ? data.map(l => l.id) : prev);
-      } else {
-        setProductionLines(prev => prev.length === 0 ? INITIAL_PRODUCTION_LINES : []);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'productionLines'));
-
-    const unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Machine));
-      if (data.length > 0) {
-        setMachines(data);
-      } else {
-        setMachines(prev => prev.length === 0 ? INITIAL_MACHINES : []);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
-
-    const unsubscribeProduction = onSnapshot(collection(db, 'production'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionRecord));
-      setProduction(data);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'production'));
-
-    const unsubscribeDowntime = onSnapshot(collection(db, 'downtime'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeRecord));
-      setDowntime(data);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
-
-    const unsubscribeReasons = onSnapshot(collection(db, 'downtimeReasons'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeReason));
-      if (data.length > 0) {
-        setDowntimeReasons(data);
-      } else {
-        setDowntimeReasons(prev => prev.length === 0 ? INITIAL_DOWNTIME_REASONS : []);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtimeReasons'));
-
-    const unsubscribeUsers = onSnapshot(collection(db, 'userProfiles'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
-      setUserProfiles(data);
-      
-      // Update current user profile if logged in
-      if (auth.currentUser) {
-        const profile = data.find(p => p.email.toLowerCase() === auth.currentUser?.email?.toLowerCase());
-        setCurrentUserProfile(profile || null);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'userProfiles'));
-
-    return () => {
-      unsubscribeLines();
-      unsubscribeMachines();
-      unsubscribeProduction();
-      unsubscribeDowntime();
-      unsubscribeReasons();
-      unsubscribeUsers();
-    };
-  }, [isAdmin]);
 
   // User Management Actions
   const addUserProfile = async (profile: Omit<UserProfile, 'id'>) => {
@@ -464,22 +562,26 @@ function AppContent() {
   const canDelete = isAdmin || (currentUserProfile?.canDelete ?? false);
 
   const handleLogin = (email: string) => {
-    localStorage.setItem('isAuthenticated', 'true');
-    localStorage.setItem('legacyUser', email);
+    safeLocalStorage.setItem('isAuthenticated', 'true');
+    safeLocalStorage.setItem('legacyUser', email);
+    safeLocalStorage.setItem('showWelcome', 'true');
     window.location.reload();
   };
 
   const handleLogout = async () => {
-    await auth.signOut();
+    try {
+      await auth.signOut();
+    } catch (e) {}
     setIsAuthenticated(false);
     setIsAdmin(false);
-    localStorage.removeItem('isAuthenticated');
-    localStorage.removeItem('legacyUser');
+    safeLocalStorage.removeItem('isAuthenticated');
+    safeLocalStorage.removeItem('legacyUser');
+    window.location.reload();
   };
 
   const addAuditLog = async (action: AuditLog['action'], entityType: AuditLog['entityType'], entityId: string, details: string) => {
     const user = auth.currentUser;
-    const legacyUser = localStorage.getItem('legacyUser');
+    const legacyUser = safeLocalStorage.getItem('legacyUser');
     const userEmail = user?.email || legacyUser || 'unknown';
     
     const log: AuditLog = {
@@ -499,31 +601,14 @@ function AppContent() {
     }
   };
   
-  // Update current time every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(format(new Date(), 'HH:mm'));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Modals
-  const [isLineModalOpen, setIsLineModalOpen] = useState(false);
-  const [isMachineModalOpen, setIsMachineModalOpen] = useState(false);
-  const [isProductionModalOpen, setIsProductionModalOpen] = useState(false);
-  const [isDowntimeModalOpen, setIsDowntimeModalOpen] = useState(false);
-  const [isReasonModalOpen, setIsReasonModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<{ type: 'production' | 'downtime' | 'machine', data: any } | null>(null);
-
-  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [selectedMachineForDetail, setSelectedMachineForDetail] = useState<Machine | null>(null);
-  const [preSelectedMachineId, setPreSelectedMachineId] = useState<string | null>(null);
-
   // Data Modification Functions
-  const updateAppConfig = async (name: string, description: string) => {
+  const updateAppConfig = async (name: string, description: string, icon?: string, welcome?: string) => {
     if (!isAdmin) return;
     try {
-      await setDoc(doc(db, 'config', 'app'), { name, description });
+      const config: any = { name, description };
+      if (icon) config.icon = icon;
+      if (welcome !== undefined) config.welcomeMessage = welcome;
+      await setDoc(doc(db, 'config', 'app'), config);
       await addAuditLog('UPDATE', 'CONFIG', 'app', `Configuração do App: ${name}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'config/app');
@@ -697,7 +782,7 @@ function AppContent() {
     }
     
     // Get current user email robustly
-    const userEmail = auth.currentUser?.email || localStorage.getItem('legacyUser') || 'Usuário Desconhecido';
+    const userEmail = auth.currentUser?.email || safeLocalStorage.getItem('legacyUser') || 'Usuário Desconhecido';
     const now = new Date().toISOString();
 
     try {
@@ -744,7 +829,7 @@ function AppContent() {
     }
     
     // Get current user email robustly
-    const userEmail = auth.currentUser?.email || localStorage.getItem('legacyUser') || 'Usuário Desconhecido';
+    const userEmail = auth.currentUser?.email || safeLocalStorage.getItem('legacyUser') || 'Usuário Desconhecido';
     const now = new Date().toISOString();
 
     try {
@@ -834,13 +919,13 @@ function AppContent() {
     );
   };
 
-  const selectAllLines = () => setSelectedLineIds(productionLines.map(l => l.id));
+  const selectAllLines = () => setSelectedLineIds((productionLines || []).map(l => l.id));
   const clearAllLines = () => setSelectedLineIds([]);
 
-  const filteredLines = productionLines.filter(l => selectedLineIds.includes(l.id));
-  const filteredMachines = machines
-    .filter(m => selectedLineIds.includes(m.productionLineId))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  const filteredLines = (productionLines || []).filter(l => l && selectedLineIds.includes(l.id));
+  const filteredMachines = (machines || [])
+    .filter(m => m && selectedLineIds.includes(m.productionLineId))
+    .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { numeric: true, sensitivity: 'base' }));
 
   if (!isAuthReady) {
     return (
@@ -885,8 +970,8 @@ function AppContent() {
         users={userProfiles}
         isMandatory={true}
         onLogin={(email: string) => {
-          localStorage.setItem('isAuthenticated', 'true');
-          localStorage.setItem('legacyUser', email);
+          safeLocalStorage.setItem('isAuthenticated', 'true');
+          safeLocalStorage.setItem('legacyUser', email);
           // Trigger re-check
           window.location.reload();
         }} 
@@ -909,28 +994,83 @@ function AppContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-white/10 p-1 rounded-full">
-            <button 
-              onClick={() => setSelectedDate(format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <input 
-              type="date" 
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent border-none text-sm font-medium focus:ring-0 cursor-pointer px-2"
-            />
-            <button 
-              onClick={() => setSelectedDate(format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
-              className="p-2 hover:bg-white/10 rounded-full transition-colors"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
+          <div className="flex flex-col md:flex-row items-center gap-2 bg-white/10 p-1 rounded-2xl">
+            <div className="flex items-center gap-1 px-2 border-r border-white/10 mr-1">
+              <button 
+                onClick={() => setIsRangeMode(!isRangeMode)}
+                className={cn(
+                  "px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-all",
+                  !isRangeMode ? "bg-emerald-500 text-white" : "text-white/50 hover:text-white"
+                )}
+              >
+                Dia
+              </button>
+              <button 
+                onClick={() => setIsRangeMode(!isRangeMode)}
+                className={cn(
+                  "px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-all",
+                  isRangeMode ? "bg-emerald-500 text-white" : "text-white/50 hover:text-white"
+                )}
+              >
+                Período
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {!isRangeMode && (
+                <button 
+                  onClick={() => setSelectedDate(format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+                  className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <input 
+                  type="date" 
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    if (!isRangeMode) setSelectedEndDate(e.target.value);
+                  }}
+                  className="bg-transparent border-none text-xs font-bold focus:ring-0 cursor-pointer px-1 w-28"
+                />
+                {isRangeMode && (
+                  <>
+                    <span className="text-white/30 text-[10px] font-bold">até</span>
+                    <input 
+                      type="date" 
+                      value={selectedEndDate}
+                      onChange={(e) => setSelectedEndDate(e.target.value)}
+                      className="bg-transparent border-none text-xs font-bold focus:ring-0 cursor-pointer px-1 w-28"
+                    />
+                  </>
+                )}
+              </div>
+              {!isRangeMode && (
+                <button 
+                  onClick={() => setSelectedDate(format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+                  className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/10 mr-2">
+              <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <LogIn className="w-3 h-3 text-emerald-400" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-white/40 uppercase leading-none">Usuário</span>
+                <span className="text-[11px] font-bold text-white leading-tight">
+                  {currentUserProfile?.name || currentUserProfile?.email || safeLocalStorage.getItem('legacyUser') || 'Visitante'}
+                </span>
+              </div>
+            </div>
+
             <button 
               onClick={() => setIsReportModalOpen(true)}
               className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition-all shadow-lg shadow-emerald-900/20"
@@ -983,6 +1123,36 @@ function AppContent() {
 
       {/* Main Content */}
       <main className="flex-1 p-2 md:p-4 max-w-7xl mx-auto w-full space-y-4">
+        
+        {/* Welcome Banner */}
+        <AnimatePresence>
+          {showWelcomeBanner && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+              exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="bg-emerald-500 p-2 rounded-xl text-white">
+                    <Check className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-emerald-900">Bem-vindo de volta!</h4>
+                    <p className="text-xs text-emerald-700">{welcomeMessage}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowWelcomeBanner(false)}
+                  className="p-2 hover:bg-emerald-100 rounded-full text-emerald-400 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         {/* Dashboard Switcher - Sticky */}
         <div className="sticky top-[72px] z-20 bg-slate-50/80 backdrop-blur-md py-2 -mx-2 px-2">
@@ -1121,6 +1291,7 @@ function AppContent() {
                           key={`${machine.id}-${idx}`}
                           machine={machine}
                           selectedDate={selectedDate}
+                          selectedEndDate={selectedEndDate}
                           currentTime={currentTime}
                           production={production}
                           downtime={downtime}
@@ -1160,6 +1331,7 @@ function AppContent() {
                           key={`${machine.id}-${idx}`}
                           machine={machine}
                           selectedDate={selectedDate}
+                          selectedEndDate={selectedEndDate}
                           currentTime={currentTime}
                           production={production}
                           downtime={downtime}
@@ -1185,6 +1357,7 @@ function AppContent() {
               <ComparativeDashboard 
                 machines={filteredMachines}
                 selectedDate={selectedDate}
+                selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
                 production={production}
                 downtime={downtime}
@@ -1195,6 +1368,7 @@ function AppContent() {
               <OverviewDashboard 
                 machines={filteredMachines}
                 selectedDate={selectedDate}
+                selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
                 production={production}
                 downtime={downtime}
@@ -1209,6 +1383,7 @@ function AppContent() {
                 downtime={downtime}
                 reasons={downtimeReasons}
                 selectedDate={selectedDate}
+                selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
                 onStartDowntime={startDowntime}
                 onFinishDowntime={(machineId, reasonName) => finishDowntime(machineId, reasonName)}
@@ -1220,6 +1395,7 @@ function AppContent() {
               <MaintenanceRankingDashboard 
                 machines={filteredMachines}
                 selectedDate={selectedDate}
+                selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
                 production={production}
                 downtime={downtime}
@@ -1232,6 +1408,7 @@ function AppContent() {
               <ActiveMaintenanceDashboard 
                 machines={filteredMachines}
                 selectedDate={selectedDate}
+                selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
                 production={production}
                 downtime={downtime}
@@ -1279,6 +1456,7 @@ function AppContent() {
             production={production}
             downtime={downtime}
             date={selectedDate}
+            endDate={selectedEndDate}
             onEditProduction={(p: any) => {
               if (!canEdit) return;
               setEditingRecord({ type: 'production', data: p });
@@ -1407,6 +1585,8 @@ function AppContent() {
           isAdmin={isAdmin}
           appName={appName}
           appDescription={appDescription}
+          appIcon={appIcon}
+          welcomeMessage={welcomeMessage}
           onUpdateConfig={updateAppConfig}
         />
 

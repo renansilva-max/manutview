@@ -29,6 +29,7 @@ import { cn } from '../lib/utils';
 interface ComparativeDashboardProps {
   machines: Machine[];
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
@@ -37,6 +38,7 @@ interface ComparativeDashboardProps {
 export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({ 
   machines, 
   selectedDate, 
+  selectedEndDate,
   currentTime,
   production, 
   downtime
@@ -48,7 +50,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
         production, 
         downtime, 
         currentTime,
-        { start: selectedDate, end: selectedDate }
+        { start: selectedDate, end: selectedEndDate || selectedDate }
       );
       return {
         id: m.id,
@@ -61,7 +63,7 @@ export const ComparativeDashboard: React.FC<ComparativeDashboardProps> = ({
         status: downtime.some(d => d.machineId === m.id && d.date === selectedDate && !d.endTime) ? 'Manutenção' : 'Operacional'
       };
     });
-  }, [machines, selectedDate, production, downtime, currentTime]);
+  }, [machines, selectedDate, selectedEndDate, production, downtime, currentTime]);
 
   const chronologicalData = useMemo(() => {
     return machines.map(m => {

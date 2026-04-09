@@ -13,6 +13,7 @@ import { cn } from '../lib/utils';
 interface ActiveMaintenanceDashboardProps {
   machines: Machine[];
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
@@ -26,6 +27,7 @@ interface ActiveMaintenanceDashboardProps {
 export const ActiveMaintenanceDashboard: React.FC<ActiveMaintenanceDashboardProps> = ({ 
   machines, 
   selectedDate, 
+  selectedEndDate,
   currentTime,
   production, 
   downtime,
@@ -117,6 +119,7 @@ export const ActiveMaintenanceDashboard: React.FC<ActiveMaintenanceDashboardProp
               machineIdx={idx}
               downtime={downtime}
               selectedDate={selectedDate}
+              selectedEndDate={selectedEndDate}
               production={production}
               currentTime={currentTime}
               reasons={reasons}

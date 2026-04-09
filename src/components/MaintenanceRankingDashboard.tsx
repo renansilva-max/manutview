@@ -14,6 +14,7 @@ import { Wrench, Clock, AlertTriangle, TrendingDown, Filter, Check } from 'lucid
 interface MaintenanceRankingDashboardProps {
   machines: Machine[];
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
@@ -24,6 +25,7 @@ interface MaintenanceRankingDashboardProps {
 export const MaintenanceRankingDashboard: React.FC<MaintenanceRankingDashboardProps> = ({ 
   machines, 
   selectedDate, 
+  selectedEndDate,
   currentTime,
   production, 
   downtime,
@@ -52,7 +54,7 @@ export const MaintenanceRankingDashboard: React.FC<MaintenanceRankingDashboardPr
         production, 
         filteredDowntime, 
         currentTime,
-        { start: selectedDate, end: selectedDate }
+        { start: selectedDate, end: selectedEndDate || selectedDate }
       );
       
       return {
@@ -63,7 +65,7 @@ export const MaintenanceRankingDashboard: React.FC<MaintenanceRankingDashboardPr
     })
     .filter(m => m.maintTime > 0) // Exclude machines with zero downtime
     .sort((a, b) => b.maintTime - a.maintTime);
-  }, [machines, selectedDate, production, downtime, currentTime, selectedReasons]);
+  }, [machines, selectedDate, selectedEndDate, production, downtime, currentTime, selectedReasons]);
 
   const formatDuration = (minutes: number) => {
     const h = Math.floor(minutes / 60);

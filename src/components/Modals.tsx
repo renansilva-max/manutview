@@ -43,20 +43,33 @@ export function Modal({ title, onClose, children, maxWidth = "max-w-md", zIndex 
   );
 }
 
-export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines, onManageReasons, onManageUsers, onDownloadExcel, onResetData, onBackup, onRestore, isAuthenticated, isAdmin, appName, appDescription, onUpdateConfig }: any) {
+export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines, onManageReasons, onManageUsers, onDownloadExcel, onResetData, onBackup, onRestore, isAuthenticated, isAdmin, appName, appDescription, appIcon, welcomeMessage, onUpdateConfig }: any) {
   const [editingName, setEditingName] = useState(appName);
   const [editingDesc, setEditingDesc] = useState(appDescription);
+  const [editingWelcome, setEditingWelcome] = useState(welcomeMessage);
 
   React.useEffect(() => {
     setEditingName(appName);
     setEditingDesc(appDescription);
-  }, [appName, appDescription, isOpen]);
+    setEditingWelcome(welcomeMessage);
+  }, [appName, appDescription, welcomeMessage, isOpen]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       onRestore(file);
       onClose();
+    }
+  };
+
+  const handleIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onUpdateConfig(editingName, editingDesc, reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -87,10 +100,20 @@ export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines
                         type="text" 
                         value={editingDesc}
                         onChange={(e) => setEditingDesc(e.target.value)}
-                        onBlur={() => onUpdateConfig(editingName, editingDesc)}
-                        onKeyDown={(e) => e.key === 'Enter' && onUpdateConfig(editingName, editingDesc)}
+                        onBlur={() => onUpdateConfig(editingName, editingDesc, undefined, editingWelcome)}
+                        onKeyDown={(e) => e.key === 'Enter' && onUpdateConfig(editingName, editingDesc, undefined, editingWelcome)}
                         className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-500 focus:ring-2 focus:ring-emerald-500 transition-all"
                         placeholder="Descrição do App"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 px-1">Mensagem de Boas-Vindas</label>
+                      <textarea 
+                        value={editingWelcome}
+                        onChange={(e) => setEditingWelcome(e.target.value)}
+                        onBlur={() => onUpdateConfig(editingName, editingDesc, undefined, editingWelcome)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-500 focus:ring-2 focus:ring-emerald-500 transition-all min-h-[80px]"
+                        placeholder="Mensagem exibida após o login"
                       />
                     </div>
                   </div>
@@ -176,7 +199,20 @@ export function SettingsModal({ isOpen, onClose, onManageLines, onManageMachines
                   </label>
                 </div>
 
-                <div className="pt-2">
+                <div className="pt-2 space-y-3">
+                  <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl">
+                    <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white border border-slate-200 shrink-0">
+                      <img src={appIcon} alt="App Icon" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-bold text-slate-800 mb-1">Ícone do Aplicativo</h4>
+                      <label className="inline-block px-3 py-1.5 bg-emerald-600 text-white text-[10px] font-black uppercase rounded-lg cursor-pointer hover:bg-emerald-700 transition-all">
+                        Alterar Ícone
+                        <input type="file" accept="image/*" onChange={handleIconUpload} className="hidden" />
+                      </label>
+                    </div>
+                  </div>
+
                   <button
                     onClick={() => {
                       if (window.confirm("Isso irá restaurar as linhas, máquinas e motivos para os valores iniciais. Deseja continuar?")) {
@@ -222,11 +258,21 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
     
+    const cleanUsername = username.toLowerCase().trim();
+    
+    // Fallback for viewhering
+    if (cleanUsername === 'viewhering' && password === 'viewhering') {
+      onLogin('viewhering@manual.com');
+      onClose();
+      return;
+    }
+
     // Check if user exists in registered users
-    const user = users.find((u: any) => 
-      (u.email.toLowerCase() === username.toLowerCase() || u.email.split('@')[0].toLowerCase() === username.toLowerCase()) &&
-      u.password === password
+    const user = (users || []).find((u: any) => 
+      u && u.email && (u.email.toLowerCase() === cleanUsername || u.email.split('@')[0].toLowerCase() === cleanUsername) &&
+      String(u.password) === String(password)
     );
 
     if (user) {
@@ -234,13 +280,13 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
       onClose();
     } else {
       // Check if it's the master user (fallback if not in DB yet)
-      if (username === 'renan.silva' && password === 'Filigrana123') {
+      if (username.toLowerCase().trim() === 'renan.silva' && password === 'Filigrana123') {
         onLogin(username);
         onClose();
       } else {
-        const userExists = users.some((u: any) => 
-          u.email.toLowerCase() === username.toLowerCase() || 
-          u.email.split('@')[0].toLowerCase() === username.toLowerCase()
+        const userExists = (users || []).some((u: any) => 
+          u && u.email && (u.email.toLowerCase() === username.toLowerCase().trim() || 
+          u.email.split('@')[0].toLowerCase() === username.toLowerCase().trim())
         );
         
         if (userExists) {
@@ -260,7 +306,7 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
       const email = result.user.email?.toLowerCase();
       
       const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
-      const isRegistered = users.some((u: any) => u.email.toLowerCase() === email) || allowedEmails.includes(email || '');
+      const isRegistered = (users || []).some((u: any) => u && u.email && u.email.toLowerCase() === email) || allowedEmails.includes(email || '');
       
       if (!isRegistered) {
         await auth.signOut();
@@ -309,6 +355,10 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
                 {isLoading ? 'Conectando...' : 'Entrar com Google'}
               </button>
               
+              <p className="text-[10px] text-slate-400 text-center leading-tight">
+                Se o login Google falhar, tente abrir o app em uma <strong>nova aba</strong> ou verifique se o bloqueador de pop-ups está ativo.
+              </p>
+              
               {isLoading && (
                 <p className="text-[10px] text-slate-400 text-center animate-pulse">
                   Verifique se uma janela de login abriu no seu navegador.
@@ -338,6 +388,11 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {users.length === 0 && (
+                <p className="text-[10px] text-amber-600 font-bold text-center bg-amber-50 p-2 rounded-lg border border-amber-100">
+                  Sincronizando lista de usuários... Aguarde um instante.
+                </p>
+              )}
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Usuário</label>
                 <input 
@@ -1106,6 +1161,7 @@ export function MachineDetailModal({
   production, 
   downtime, 
   date,
+  endDate,
   onClose, 
   onEditProduction, 
   onDeleteProduction, 
@@ -1123,15 +1179,15 @@ export function MachineDetailModal({
   if (!machine) return null;
 
   const machineProd = useMemo(() => production
-    .filter((p: any) => p.machineId === machine.id && p.date === date)
+    .filter((p: any) => p.machineId === machine.id && p.date >= date && p.date <= (endDate || date))
     .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)),
-    [production, machine.id, date]
+    [production, machine.id, date, endDate]
   );
 
   const machineDown = useMemo(() => downtime
-    .filter((d: any) => d.machineId === machine.id && d.date === date)
+    .filter((d: any) => d.machineId === machine.id && d.date >= date && d.date <= (endDate || date))
     .sort((a: any, b: any) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime)),
-    [downtime, machine.id, date]
+    [downtime, machine.id, date, endDate]
   );
 
   const handleSaveGoal = () => {
@@ -1666,6 +1722,7 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
 
 export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, onDelete }: any) {
   const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [accessType, setAccessType] = useState<'google' | 'manual'>('google');
   const [newRole, setNewRole] = useState<'admin' | 'user' | 'viewer'>('user');
@@ -1679,12 +1736,14 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
     try {
       await onAdd({
         email: newEmail.toLowerCase().trim(),
+        name: newName.trim(),
         password: accessType === 'manual' ? newPassword : undefined,
         canEdit: newRole === 'viewer' ? false : newCanEdit,
         canDelete: newRole === 'viewer' ? false : newCanDelete,
         role: newRole
       });
       setNewEmail('');
+      setNewName('');
       setNewPassword('');
       setNewRole('user');
     } catch (error) {
@@ -1724,7 +1783,15 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
 
               <input 
                 type="text" 
-                placeholder={accessType === 'google' ? "E-mail do Google" : "Nome de Usuário"}
+                placeholder="Nome do Usuário (Ex: João Silva)"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+              />
+
+              <input 
+                type="text" 
+                placeholder={accessType === 'google' ? "E-mail do Google" : "Login / Usuário"}
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
                 className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
@@ -1801,7 +1868,7 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                 <div key={`${user.id}-${idx}`} className="p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between group hover:border-emerald-200 transition-all">
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-700">{user.email}</span>
+                      <span className="text-sm font-bold text-slate-700">{user.name || user.email}</span>
                       <span className={cn(
                         "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
                         user.role === 'admin' ? "bg-purple-100 text-purple-700" :
@@ -1811,6 +1878,7 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                         {user.role}
                       </span>
                     </div>
+                    {user.name && <span className="text-[10px] text-slate-400 font-medium">{user.email}</span>}
                     {user.password && <span className="text-[10px] text-slate-400">Senha: {user.password}</span>}
                     <div className="flex gap-2">
                       <span className={cn(

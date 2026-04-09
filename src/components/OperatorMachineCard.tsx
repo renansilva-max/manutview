@@ -10,6 +10,7 @@ interface OperatorMachineCardProps {
   isCompact?: boolean;
   downtime: DowntimeRecord[];
   selectedDate: string;
+  selectedEndDate?: string;
   production: ProductionRecord[];
   currentTime: string;
   reasons: DowntimeReason[];
@@ -28,6 +29,7 @@ export const OperatorMachineCard: React.FC<OperatorMachineCardProps> = ({
   isCompact = false,
   downtime,
   selectedDate,
+  selectedEndDate,
   production,
   currentTime,
   reasons,
@@ -52,7 +54,7 @@ export const OperatorMachineCard: React.FC<OperatorMachineCardProps> = ({
     production,
     downtime,
     currentTime,
-    { start: selectedDate, end: selectedDate }
+    { start: selectedDate, end: selectedEndDate || selectedDate }
   );
 
   return (

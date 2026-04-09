@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { format } from 'date-fns';
 import { 
   Activity, 
   Clock, 
@@ -15,13 +16,16 @@ import {
   DowntimeRecord 
 } from '../types';
 import { 
-  calculateStats 
+  calculateStats,
+  calculateSeconds,
+  formatChronometer
 } from '../utils';
 import { cn } from '../lib/utils';
 
 interface MachineCardProps {
   machine: Machine;
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
@@ -34,6 +38,7 @@ interface MachineCardProps {
 export const MachineCard: React.FC<MachineCardProps> = ({ 
   machine, 
   selectedDate, 
+  selectedEndDate,
   currentTime,
   production, 
   downtime,
@@ -43,33 +48,16 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   onClick
 }) => {
   const stats = useMemo(() => 
-    calculateStats(machine, production, downtime, currentTime, { start: selectedDate, end: selectedDate }),
-    [selectedDate, production, downtime, machine, currentTime]
+    calculateStats(machine, production, downtime, currentTime, { start: selectedDate, end: selectedEndDate || selectedDate }),
+    [selectedDate, selectedEndDate, production, downtime, machine, currentTime]
   );
 
   const activeDowntime = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = format(new Date(), 'yyyy-MM-dd');
     return downtime.find(d => d.machineId === machine.id && d.date === today && !d.endTime);
-  }, [selectedDate, downtime, machine.id]);
+  }, [downtime, machine.id]);
 
   const isActiveDowntime = !!activeDowntime;
-
-  const calculateSeconds = (start: string, end: string) => {
-    try {
-      const startDate = new Date(`${selectedDate}T${start.length === 5 ? start + ':00' : start}`);
-      const endDate = new Date(`${selectedDate}T${end.length === 5 ? end + ':00' : end}`);
-      let diff = (endDate.getTime() - startDate.getTime()) / 1000;
-      return diff < 0 ? diff + 86400 : diff;
-    } catch (e) { return 0; }
-  };
-
-  const formatChronometer = (totalSeconds: number) => {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = Math.floor(totalSeconds % 60);
-    if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   const currentDurationSeconds = activeDowntime ? calculateSeconds(activeDowntime.startTime, currentTime) : 0;
 

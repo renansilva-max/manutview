@@ -173,7 +173,7 @@ service cloud.firestore {
     }
 
     match /userProfiles/{profileId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAdmin();
     }
 

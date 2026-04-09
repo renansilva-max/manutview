@@ -8,17 +8,18 @@ export const generateId = () => Math.random().toString(36).substr(2, 9);
 
 export const calculateSeconds = (start: string, end: string) => {
   try {
-    // Standardize to HH:mm by taking only the first 5 characters
-    const s = start.split(':').slice(0, 2).join(':');
-    const e = end.split(':').slice(0, 2).join(':');
+    const sParts = start.split(':');
+    const eParts = end.split(':');
     
-    const startDate = parse(s, 'HH:mm', new Date());
-    const endDate = parse(e, 'HH:mm', new Date());
+    // Ensure we have HH:mm:ss or HH:mm
+    const s = `${sParts[0].padStart(2, '0')}:${sParts[1].padStart(2, '0')}:${(sParts[2] || '00').padStart(2, '0')}`;
+    const e = `${eParts[0].padStart(2, '0')}:${eParts[1].padStart(2, '0')}:${(eParts[2] || '00').padStart(2, '0')}`;
+    
+    const startDate = parse(s, 'HH:mm:ss', new Date());
+    const endDate = parse(e, 'HH:mm:ss', new Date());
     
     let diffInMs = endDate.getTime() - startDate.getTime();
     
-    // For this application, we don't expect records to cross midnight 
-    // within the same day's calculation logic. If end < start, it's 0.
     if (diffInMs < 0) return 0;
     
     return Math.floor(diffInMs / 1000);
@@ -30,8 +31,12 @@ export const calculateSeconds = (start: string, end: string) => {
 export const formatChronometer = (totalSeconds: number) => {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
 
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  if (h > 0) {
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
 export const formatTotalTime = (totalSeconds: number) => {

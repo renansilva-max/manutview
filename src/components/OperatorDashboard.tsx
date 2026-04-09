@@ -12,6 +12,7 @@ interface OperatorDashboardProps {
   downtime: DowntimeRecord[];
   reasons: DowntimeReason[];
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   onStartDowntime: (machineId: string, reason: string) => void;
   onFinishDowntime: (machineId: string, reasonName?: string) => void;
@@ -25,6 +26,7 @@ export function OperatorDashboard({
   downtime, 
   reasons, 
   selectedDate,
+  selectedEndDate,
   currentTime,
   onStartDowntime,
   onFinishDowntime,
@@ -36,6 +38,7 @@ export function OperatorDashboard({
   const commonProps = {
     downtime,
     selectedDate,
+    selectedEndDate,
     production,
     currentTime,
     reasons,
@@ -100,7 +103,7 @@ export function OperatorDashboard({
             const isExpanded = expandedLineId === line.id;
 
             const lineStats = lineMachines.map(m => calculateStats(
-              m, production, downtime, currentTime, { start: selectedDate, end: selectedDate }
+              m, production, downtime, currentTime, { start: selectedDate, end: selectedEndDate || selectedDate }
             ));
 
             const totalProd = lineStats.reduce((acc, s) => acc + s.totalProduction, 0);

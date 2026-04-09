@@ -30,6 +30,7 @@ import { Wrench, Package, Clock, Target, TrendingUp, AlertTriangle } from 'lucid
 interface MaintenanceSummaryDashboardProps {
   machines: Machine[];
   selectedDate: string;
+  selectedEndDate?: string;
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
@@ -38,13 +39,14 @@ interface MaintenanceSummaryDashboardProps {
 export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({ 
   machines, 
   selectedDate, 
+  selectedEndDate,
   currentTime,
   production, 
   downtime
 }) => {
   const workingHoursInfo = useMemo(() => {
-    const dayProd = production.filter(p => p.date === selectedDate);
-    const dayDown = downtime.filter(d => d.date === selectedDate);
+    const dayProd = production.filter(p => p.date >= selectedDate && p.date <= (selectedEndDate || selectedDate));
+    const dayDown = downtime.filter(d => d.date >= selectedDate && d.date <= (selectedEndDate || selectedDate));
     
     const allTimes = [
       ...dayProd.map(p => timeToMinutes(p.startTime)),
@@ -66,7 +68,7 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
       startTime: start,
       endTime: end
     };
-  }, [production, downtime, selectedDate, currentTime]);
+  }, [production, downtime, selectedDate, selectedEndDate, currentTime]);
 
   const formatDuration = (minutes: number) => {
     const totalMinutes = Math.round(minutes);
@@ -82,7 +84,7 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
         production, 
         downtime, 
         currentTime,
-        { start: selectedDate, end: selectedDate }
+        { start: selectedDate, end: selectedEndDate || selectedDate }
       );
       
       const totalTime = stats.totalOperationalMinutes + stats.totalDowntimeMinutes;
@@ -98,7 +100,7 @@ export const OverviewDashboard: React.FC<MaintenanceSummaryDashboardProps> = ({
         totalTime
       };
     });
-  }, [machines, selectedDate, production, downtime, currentTime, workingHoursInfo]);
+  }, [machines, selectedDate, selectedEndDate, production, downtime, currentTime, workingHoursInfo]);
 
   const totalStats = useMemo(() => {
     const totals = machineData.reduce((acc, curr) => ({
