@@ -256,17 +256,30 @@ function AppContent() {
                        effectiveEmail.toLowerCase() === 'renan.silva' ||
                        effectiveEmail.toLowerCase() === 'viewhering@manual.com';
       
-      setCurrentUserProfile(profile || null);
-      setIsAdmin(profile?.role === 'admin' || isMaster);
-      setIsAuthenticated(true);
+      if (profile || isMaster) {
+        setCurrentUserProfile(profile || null);
+        setIsAdmin(profile?.role === 'admin' || isMaster);
+        setIsAuthenticated(true);
 
-      // If we have a legacy session but no Firebase user, try to sign in anonymously
-      if (!fbUser && isAuthStored) {
-        signInAnonymously(auth).catch(e => {
-          if (e.code === 'auth/admin-restricted-operation') {
-            setIsLegacyAuthWarningOpen(true);
-          }
-        });
+        // If we have a legacy session but no Firebase user, try to sign in anonymously
+        if (!fbUser && isAuthStored) {
+          signInAnonymously(auth).catch(e => {
+            if (e.code === 'auth/admin-restricted-operation') {
+              setIsLegacyAuthWarningOpen(true);
+            }
+          });
+        }
+      } else {
+        // User not found in registered profiles and not a master account
+        setCurrentUserProfile(null);
+        setIsAdmin(false);
+        setIsAuthenticated(false);
+        
+        // Clear legacy session if it's invalid
+        if (!fbUser && isAuthStored) {
+          safeLocalStorage.removeItem('isAuthenticated');
+          safeLocalStorage.removeItem('legacyUser');
+        }
       }
     } else {
       setCurrentUserProfile(null);

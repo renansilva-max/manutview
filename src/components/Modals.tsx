@@ -312,8 +312,18 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email?.toLowerCase();
       
-      onLogin(email);
-      onClose();
+      // Check if user is registered or is a master account
+      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+      const isMaster = allowedEmails.includes(email || '') || email === 'renan.silva';
+      const isRegistered = (users || []).some((u: any) => u && u.email && u.email.toLowerCase() === email);
+
+      if (isRegistered || isMaster) {
+        onLogin(email);
+        onClose();
+      } else {
+        await auth.signOut();
+        setError('Este e-mail Google não está cadastrado no sistema. Solicite acesso ao administrador.');
+      }
     } catch (err: any) {
       console.error('Login error:', err);
       if (err.code === 'auth/popup-blocked') {
@@ -1743,25 +1753,54 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
   const [newCanEdit, setNewCanEdit] = useState(true);
   const [newCanDelete, setNewCanDelete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [editingUser, setEditingUser] = useState<any>(null);
+  const [editEmail, setEditEmail] = useState('');
 
   const handleAdd = async () => {
-    if (!newEmail) return;
+    if (!newEmail) {
+      alert("Por favor, insira o e-mail ou usuário.");
+      return;
+    }
     setIsLoading(true);
     try {
-      await onAdd({
+      console.log("Adding user:", newEmail);
+      const userData: any = {
         email: newEmail.toLowerCase().trim(),
         name: newName.trim(),
-        password: accessType === 'manual' ? newPassword : undefined,
         canEdit: newRole === 'viewer' ? false : newCanEdit,
         canDelete: newRole === 'viewer' ? false : newCanDelete,
-        role: newRole
-      });
+        role: newRole,
+        accessType: accessType
+      };
+
+      if (accessType === 'manual') {
+        userData.password = newPassword;
+      }
+
+      await onAdd(userData);
       setNewEmail('');
       setNewName('');
       setNewPassword('');
       setNewRole('user');
+      alert("Usuário adicionado com sucesso!");
     } catch (error) {
       console.error("Error adding user:", error);
+      alert("Erro ao adicionar usuário. Verifique sua conexão.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!editingUser || !editEmail) return;
+    setIsLoading(true);
+    try {
+      await onUpdate(editingUser.id, { email: editEmail.toLowerCase().trim() });
+      setEditingUser(null);
+      setEditEmail('');
+      alert("E-mail atualizado com sucesso!");
+    } catch (error) {
+      console.error("Error updating email:", error);
     } finally {
       setIsLoading(false);
     }
@@ -1771,109 +1810,145 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
     isOpen && (
       <Modal title="Gerenciar Usuários" onClose={onClose} maxWidth="max-w-lg">
         <div className="space-y-6">
-          <div className="p-4 bg-slate-50 rounded-2xl space-y-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Adicionar Novo Usuário</h3>
-            <div className="space-y-3">
-              <div className="flex bg-white p-1 rounded-xl border border-slate-200">
-                <button 
-                  onClick={() => setAccessType('google')}
-                  className={cn(
-                    "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
-                    accessType === 'google' ? "bg-blue-500 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
-                  )}
-                >
-                  Login Google
-                </button>
-                <button 
-                  onClick={() => setAccessType('manual')}
-                  className={cn(
-                    "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
-                    accessType === 'manual' ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
-                  )}
-                >
-                  Usuário/Senha
+          {editingUser ? (
+            <div className="p-4 bg-blue-50 rounded-2xl space-y-4 border border-blue-100">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xs font-black text-blue-700 uppercase tracking-widest">Editar E-mail do Usuário</h3>
+                <button onClick={() => setEditingUser(null)} className="text-blue-400 hover:text-blue-600">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-
-              <input 
-                type="text" 
-                placeholder="Nome do Usuário (Ex: João Silva)"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
-              />
-
-              <input 
-                type="text" 
-                placeholder={accessType === 'google' ? "E-mail do Google" : "Login / Usuário"}
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
-              />
-              
-              {accessType === 'manual' && (
+              <div className="space-y-3">
+                <p className="text-xs text-blue-600 font-medium">Usuário: <strong>{editingUser.name || editingUser.email}</strong></p>
                 <input 
                   type="text" 
-                  placeholder="Senha de acesso"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Novo E-mail"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+                <div className="flex gap-2">
+                  <button 
+                    onClick={handleUpdateEmail}
+                    disabled={isLoading || !editEmail}
+                    className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all disabled:opacity-50"
+                  >
+                    {isLoading ? "Salvando..." : "Salvar Alteração"}
+                  </button>
+                  <button 
+                    onClick={() => setEditingUser(null)}
+                    className="px-4 py-3 bg-white text-slate-600 rounded-xl font-bold border border-slate-200 hover:bg-slate-50 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-slate-50 rounded-2xl space-y-4">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Adicionar Novo Usuário</h3>
+              <div className="space-y-3">
+                <div className="flex bg-white p-1 rounded-xl border border-slate-200">
+                  <button 
+                    onClick={() => setAccessType('google')}
+                    className={cn(
+                      "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
+                      accessType === 'google' ? "bg-blue-500 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
+                    )}
+                  >
+                    Login Google
+                  </button>
+                  <button 
+                    onClick={() => setAccessType('manual')}
+                    className={cn(
+                      "flex-1 py-2 text-[10px] font-black uppercase rounded-lg transition-all",
+                      accessType === 'manual' ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:bg-slate-50"
+                    )}
+                  >
+                    Usuário/Senha
+                  </button>
+                </div>
+
+                <input 
+                  type="text" 
+                  placeholder="Nome do Usuário (Ex: João Silva)"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
                 />
-              )}
-              
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Perfil / Role</label>
-                <select 
-                  value={newRole}
-                  onChange={(e: any) => {
-                    const role = e.target.value;
-                    setNewRole(role);
-                    if (role === 'viewer') {
-                      setNewCanEdit(false);
-                      setNewCanDelete(false);
-                    } else if (role === 'admin') {
-                      setNewCanEdit(true);
-                      setNewCanDelete(true);
-                    }
-                  }}
+
+                <input 
+                  type="text" 
+                  placeholder={accessType === 'google' ? "E-mail do Google" : "Login / Usuário"}
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
                   className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
-                >
-                  <option value="admin">Administrador</option>
-                  <option value="user">Líder / Operador</option>
-                  <option value="viewer">Visualizador</option>
-                </select>
-              </div>
-              {newRole !== 'viewer' && (
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={newCanEdit}
-                      onChange={(e) => setNewCanEdit(e.target.checked)}
-                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span className="text-xs font-bold text-slate-600">Pode Editar</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={newCanDelete}
-                      onChange={(e) => setNewCanDelete(e.target.checked)}
-                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span className="text-xs font-bold text-slate-600">Pode Excluir</span>
-                  </label>
+                />
+                
+                {accessType === 'manual' && (
+                  <input 
+                    type="text" 
+                    placeholder="Senha de acesso"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+                  />
+                )}
+                
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Perfil / Role</label>
+                  <select 
+                    value={newRole}
+                    onChange={(e: any) => {
+                      const role = e.target.value;
+                      setNewRole(role);
+                      if (role === 'viewer') {
+                        setNewCanEdit(false);
+                        setNewCanDelete(false);
+                      } else if (role === 'admin') {
+                        setNewCanEdit(true);
+                        setNewCanDelete(true);
+                      }
+                    }}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 text-sm"
+                  >
+                    <option value="admin">Administrador</option>
+                    <option value="user">Líder / Operador</option>
+                    <option value="viewer">Visualizador</option>
+                  </select>
                 </div>
-              )}
-              <button 
-                onClick={handleAdd}
-                disabled={isLoading || !newEmail}
-                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50"
-              >
-                Adicionar Usuário
-              </button>
+                {newRole !== 'viewer' && (
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={newCanEdit}
+                        onChange={(e) => setNewCanEdit(e.target.checked)}
+                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs font-bold text-slate-600">Pode Editar</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={newCanDelete}
+                        onChange={(e) => setNewCanDelete(e.target.checked)}
+                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs font-bold text-slate-600">Pode Excluir</span>
+                    </label>
+                  </div>
+                )}
+                <button 
+                  onClick={handleAdd}
+                  disabled={isLoading || !newEmail}
+                  className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50"
+                >
+                  {isLoading ? "Adicionando..." : "Adicionar Usuário"}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-3">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">Usuários Cadastrados</h3>
@@ -1912,6 +1987,16 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => {
+                        setEditingUser(user);
+                        setEditEmail(user.email);
+                      }}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      title="Editar E-mail"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => {
                         const roles: ('admin' | 'user' | 'viewer')[] = ['admin', 'user', 'viewer'];
                         const nextRole = roles[(roles.indexOf(user.role) + 1) % roles.length];
                         onUpdate(user.id, { 
@@ -1920,7 +2005,7 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                           canDelete: nextRole === 'viewer' ? false : (nextRole === 'admin' ? true : user.canDelete)
                         });
                       }}
-                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                      className="p-2 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all"
                       title="Alternar Perfil"
                     >
                       <Settings className="w-4 h-4" />
@@ -1931,22 +2016,14 @@ export function UserManagementModal({ isOpen, users, onClose, onAdd, onUpdate, o
                       className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all disabled:opacity-30"
                       title="Alternar Edição"
                     >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => onUpdate(user.id, { canDelete: !user.canDelete })}
-                      disabled={user.role === 'viewer' || user.role === 'admin'}
-                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all disabled:opacity-30"
-                      title="Alternar Exclusão"
-                    >
-                      <Trash2 className="w-4 h-4" />
+                      <Check className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => onDelete(user.id)}
                       className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                       title="Remover Usuário"
                     >
-                      <X className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
