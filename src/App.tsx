@@ -9,6 +9,7 @@ import {
   ChevronLeft, 
   ChevronRight, 
   AlertCircle, 
+  AlertTriangle,
   Check,
   X,
   Factory,
@@ -65,7 +66,8 @@ import {
   deleteDoc, 
   onSnapshot, 
   OperationType, 
-  handleFirestoreError 
+  handleFirestoreError,
+  signInAnonymously 
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { generateId, formatDuration } from './utils';
@@ -201,6 +203,7 @@ function AppContent() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [isLegacyAuthWarningOpen, setIsLegacyAuthWarningOpen] = useState(false);
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
 
   const [appName, setAppName] = useState('Controle de Produção');
@@ -229,46 +232,48 @@ function AppContent() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auth Sync
+  // Auth State Management
+  const [fbUser, setFbUser] = useState<any>(null);
+
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        // Check if user is in registered profiles
-        const profile = (userProfiles || []).find(p => p && p.email?.toLowerCase() === user.email?.toLowerCase());
-        const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
-        
-        if (profile || allowedEmails.includes(user.email || '')) {
-          setIsAuthenticated(true);
-          setCurrentUserProfile(profile || null);
-          setIsAdmin(profile?.role === 'admin' || allowedEmails.includes(user.email || ''));
-        } else {
-          // User not registered
-          setIsAuthenticated(false);
-          setIsAdmin(false);
-          setCurrentUserProfile(null);
-        }
-      } else {
-        const legacyUser = safeLocalStorage.getItem('legacyUser');
-        const profile = (userProfiles || []).find(p => p && p.email?.toLowerCase() === legacyUser?.toLowerCase());
-        const isMasterFallback = legacyUser === 'renan.silva' || legacyUser === 'viewhering@manual.com';
-        
-        const isAuthStored = safeLocalStorage.getItem('isAuthenticated') === 'true';
-
-        if (isAuthStored && (profile || isMasterFallback)) {
-          setIsAuthenticated(true);
-          setCurrentUserProfile(profile || null);
-          setIsAdmin(profile?.role === 'admin' || isMasterFallback);
-        } else {
-          setIsAuthenticated(false);
-          setIsAdmin(false);
-          setCurrentUserProfile(null);
-        }
-      }
+      setFbUser(user);
       setIsAuthReady(true);
     });
-
     return () => unsubscribeAuth();
-  }, [userProfiles]);
+  }, []);
+
+  // Sync User Profile and Permissions
+  useEffect(() => {
+    const legacyUser = safeLocalStorage.getItem('legacyUser');
+    const isAuthStored = safeLocalStorage.getItem('isAuthenticated') === 'true';
+    const effectiveEmail = fbUser?.email || (isAuthStored ? legacyUser : null);
+    
+    if (effectiveEmail) {
+      const profile = (userProfiles || []).find(p => p && p.email?.toLowerCase() === effectiveEmail.toLowerCase());
+      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
+      const isMaster = allowedEmails.includes(effectiveEmail.toLowerCase()) || 
+                       effectiveEmail.toLowerCase() === 'renan.silva' ||
+                       effectiveEmail.toLowerCase() === 'viewhering@manual.com';
+      
+      setCurrentUserProfile(profile || null);
+      setIsAdmin(profile?.role === 'admin' || isMaster);
+      setIsAuthenticated(true);
+
+      // If we have a legacy session but no Firebase user, try to sign in anonymously
+      if (!fbUser && isAuthStored) {
+        signInAnonymously(auth).catch(e => {
+          if (e.code === 'auth/admin-restricted-operation') {
+            setIsLegacyAuthWarningOpen(true);
+          }
+        });
+      }
+    } else {
+      setCurrentUserProfile(null);
+      setIsAdmin(false);
+      setIsAuthenticated(false);
+    }
+  }, [fbUser, userProfiles]);
 
   useEffect(() => {
     document.title = appName;
@@ -304,65 +309,46 @@ function AppContent() {
     const unsubscribeUsers = onSnapshot(collection(db, 'userProfiles'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserProfile));
       setUserProfiles(data);
-      
-      if (auth.currentUser) {
-        const profile = data.find(p => p.email?.toLowerCase() === auth.currentUser?.email?.toLowerCase());
-        setCurrentUserProfile(profile || null);
-      }
     }, (error) => console.warn("User profiles sync error:", error));
 
-    // Only sync operational data if authenticated
-    let unsubscribeLines = () => {};
-    let unsubscribeMachines = () => {};
-    let unsubscribeProduction = () => {};
-    let unsubscribeDowntime = () => {};
-    let unsubscribeReasons = () => {};
-    let unsubscribeLogs = () => {};
+    // Sync operational data (visible to all authenticated users or publicly)
+    const unsubscribeLines = onSnapshot(collection(db, 'productionLines'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionLine));
+      if (data.length > 0) {
+        setProductionLines(data);
+        setSelectedLineIds(prev => prev.length === 0 ? data.map(l => l.id) : prev);
+      } else {
+        setProductionLines(prev => prev.length === 0 ? INITIAL_PRODUCTION_LINES : []);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'productionLines'));
 
-    if (isAuthenticated) {
-      unsubscribeLogs = onSnapshot(collection(db, 'auditLogs'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog));
-        setAuditLogs(data.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
-      }, (error) => console.warn("Audit logs sync error:", error));
+    const unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Machine));
+      if (data.length > 0) {
+        setMachines(data);
+      } else {
+        setMachines(prev => prev.length === 0 ? INITIAL_MACHINES : []);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
 
-      unsubscribeLines = onSnapshot(collection(db, 'productionLines'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionLine));
-        if (data.length > 0) {
-          setProductionLines(data);
-          setSelectedLineIds(prev => prev.length === 0 ? data.map(l => l.id) : prev);
-        } else {
-          setProductionLines(prev => prev.length === 0 ? INITIAL_PRODUCTION_LINES : []);
-        }
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'productionLines'));
+    const unsubscribeProduction = onSnapshot(collection(db, 'production'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionRecord));
+      setProduction(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'production'));
 
-      unsubscribeMachines = onSnapshot(collection(db, 'machines'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Machine));
-        if (data.length > 0) {
-          setMachines(data);
-        } else {
-          setMachines(prev => prev.length === 0 ? INITIAL_MACHINES : []);
-        }
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'machines'));
+    const unsubscribeDowntime = onSnapshot(collection(db, 'downtime'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeRecord));
+      setDowntime(data);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
 
-      unsubscribeProduction = onSnapshot(collection(db, 'production'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ProductionRecord));
-        setProduction(data);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'production'));
-
-      unsubscribeDowntime = onSnapshot(collection(db, 'downtime'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeRecord));
-        setDowntime(data);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtime'));
-
-      unsubscribeReasons = onSnapshot(collection(db, 'downtimeReasons'), (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeReason));
-        if (data.length > 0) {
-          setDowntimeReasons(data);
-        } else {
-          setDowntimeReasons(prev => prev.length === 0 ? INITIAL_DOWNTIME_REASONS : []);
-        }
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtimeReasons'));
-    }
+    const unsubscribeReasons = onSnapshot(collection(db, 'downtimeReasons'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as DowntimeReason));
+      if (data.length > 0) {
+        setDowntimeReasons(data);
+      } else {
+        setDowntimeReasons(prev => prev.length === 0 ? INITIAL_DOWNTIME_REASONS : []);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'downtimeReasons'));
 
     return () => {
       unsubscribeConfig();
@@ -372,21 +358,34 @@ function AppContent() {
       unsubscribeProduction();
       unsubscribeDowntime();
       unsubscribeReasons();
-      unsubscribeLogs();
     };
-  }, [isAuthenticated, isAdmin]);
+  }, []);
+
+  // Audit Logs Sync (Admin only)
+  useEffect(() => {
+    if (!isAdmin) return;
+    
+    const unsubscribeLogs = onSnapshot(collection(db, 'auditLogs'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AuditLog));
+      setAuditLogs(data.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+    }, (error) => console.warn("Audit logs sync error:", error));
+
+    return () => unsubscribeLogs();
+  }, [isAdmin]);
 
   // Show welcome message after login
   useEffect(() => {
-    const showWelcome = safeLocalStorage.getItem('showWelcome');
-    if (showWelcome === 'true' && welcomeMessage) {
+    if (!isAuthReady) return;
+    
+    const showWelcome = sessionStorage.getItem('showWelcome');
+    if (showWelcome === 'true' && isAuthenticated && welcomeMessage) {
       setShowWelcomeBanner(true);
-      safeLocalStorage.removeItem('showWelcome');
+      sessionStorage.removeItem('showWelcome');
       // Auto hide after 10 seconds
       const timer = setTimeout(() => setShowWelcomeBanner(false), 10000);
       return () => clearTimeout(timer);
     }
-  }, [welcomeMessage]);
+  }, [isAuthReady, isAuthenticated, welcomeMessage]);
 
   const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -561,22 +560,32 @@ function AppContent() {
   const canEdit = isAdmin || (currentUserProfile?.canEdit ?? false);
   const canDelete = isAdmin || (currentUserProfile?.canDelete ?? false);
 
-  const handleLogin = (email: string) => {
+  const handleLogin = async (email: string) => {
     safeLocalStorage.setItem('isAuthenticated', 'true');
     safeLocalStorage.setItem('legacyUser', email);
-    safeLocalStorage.setItem('showWelcome', 'true');
-    window.location.reload();
+    sessionStorage.setItem('showWelcome', 'true');
+    
+    if (!auth.currentUser) {
+      try {
+        await signInAnonymously(auth);
+      } catch (e) {
+        console.warn("Anonymous sign in failed", e);
+      }
+    }
+    
+    setIsAuthenticated(true);
+    setIsLoginModalOpen(false);
   };
 
   const handleLogout = async () => {
     try {
       await auth.signOut();
     } catch (e) {}
-    setIsAuthenticated(false);
-    setIsAdmin(false);
     safeLocalStorage.removeItem('isAuthenticated');
     safeLocalStorage.removeItem('legacyUser');
-    window.location.reload();
+    setIsAuthenticated(false);
+    setIsAdmin(false);
+    setCurrentUserProfile(null);
   };
 
   const addAuditLog = async (action: AuditLog['action'], entityType: AuditLog['entityType'], entityId: string, details: string) => {
@@ -870,6 +879,10 @@ function AppContent() {
   };
 
   const startDowntime = (machineId: string, reasonName?: string) => {
+    if (!canEdit) {
+      alert("Você não tem permissão para realizar esta ação.");
+      return;
+    }
     const type = reasonName || 'Mecânica';
     const activeForReason = downtime.find(d => 
       d.machineId === machineId && 
@@ -890,6 +903,10 @@ function AppContent() {
   };
 
   const finishDowntime = (machineId: string, reasonName?: string) => {
+    if (!canEdit) {
+      alert("Você não tem permissão para realizar esta ação.");
+      return;
+    }
     const active = downtime.filter(d => d.machineId === machineId && d.date === selectedDate && !d.endTime);
     
     if (reasonName) {
@@ -969,12 +986,7 @@ function AppContent() {
         onClose={() => {}} 
         users={userProfiles}
         isMandatory={true}
-        onLogin={(email: string) => {
-          safeLocalStorage.setItem('isAuthenticated', 'true');
-          safeLocalStorage.setItem('legacyUser', email);
-          // Trigger re-check
-          window.location.reload();
-        }} 
+        onLogin={handleLogin} 
       />
     );
   }
@@ -1156,6 +1168,22 @@ function AppContent() {
         
         {/* Dashboard Switcher - Sticky */}
         <div className="sticky top-[72px] z-20 bg-slate-50/80 backdrop-blur-md py-2 -mx-2 px-2">
+          {isLegacyAuthWarningOpen && !auth.currentUser && (
+            <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <p className="text-[10px] font-bold text-amber-800 leading-tight">
+                  <strong>Aviso:</strong> Você está em modo de visualização local. Para salvar dados na nuvem, o administrador precisa habilitar o "Login Anônimo" no Firebase ou você deve entrar com o Google.
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsLegacyAuthWarningOpen(false)}
+                className="p-1 hover:bg-amber-100 rounded-lg text-amber-600"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
           <div className="flex bg-slate-200/50 p-1 rounded-xl gap-1 border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
             <button 
               onClick={() => setIsFilterModalOpen(true)}
@@ -1280,7 +1308,7 @@ function AppContent() {
             {currentDashboard === 'timeline' && (
               <div className="space-y-8">
                 {filteredLines.map((line, lineIdx) => (
-                  <div key={`${line.id}-${lineIdx}`} className="space-y-4">
+                  <div key={`line-timeline-${line.id || `idx-${lineIdx}`}`} className="space-y-4">
                     <div className="flex items-center gap-2 px-2">
                       <div className="h-4 w-1 bg-emerald-500 rounded-full"></div>
                       <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">{line.name}</h2>
@@ -1288,17 +1316,20 @@ function AppContent() {
                     <div className="space-y-2">
                       {filteredMachines.filter(m => m.productionLineId === line.id).map((machine, idx) => (
                         <MachineRow 
-                          key={`${machine.id}-${idx}`}
+                          key={`machine-row-${machine.id || `idx-${idx}`}`}
                           machine={machine}
                           selectedDate={selectedDate}
                           selectedEndDate={selectedEndDate}
                           currentTime={currentTime}
                           production={production}
                           downtime={downtime}
-                          isAuthenticated={canEdit}
+                          canEdit={canEdit}
                           onClick={setSelectedMachineForDetail}
                           onEditRecord={(type, record) => {
-                            if (!canEdit) return;
+                            if (!canEdit) {
+                              alert("Você não tem permissão para realizar esta ação.");
+                              return;
+                            }
                             setEditingRecord({ type, data: record });
                             if (type === 'production') setIsProductionModalOpen(true);
                             else setIsDowntimeModalOpen(true);
@@ -1320,7 +1351,7 @@ function AppContent() {
             {currentDashboard === 'summary' && (
               <div className="space-y-8">
                 {filteredLines.map((line, lineIdx) => (
-                  <div key={`${line.id}-${lineIdx}`} className="space-y-4">
+                  <div key={`line-summary-${line.id || `idx-${lineIdx}`}`} className="space-y-4">
                     <div className="flex items-center gap-2 px-2">
                       <div className="h-4 w-1 bg-emerald-500 rounded-full"></div>
                       <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">{line.name}</h2>
@@ -1328,14 +1359,14 @@ function AppContent() {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {filteredMachines.filter(m => m.productionLineId === line.id).map((machine, idx) => (
                         <MachineCard 
-                          key={`${machine.id}-${idx}`}
+                          key={`machine-card-${machine.id || `idx-${idx}`}`}
                           machine={machine}
                           selectedDate={selectedDate}
                           selectedEndDate={selectedEndDate}
                           currentTime={currentTime}
                           production={production}
                           downtime={downtime}
-                          isAuthenticated={canEdit}
+                          canEdit={canEdit}
                           onStartDowntime={() => startDowntime(machine.id)}
                           onFinishDowntime={() => finishDowntime(machine.id)}
                           onClick={setSelectedMachineForDetail}
@@ -1385,6 +1416,7 @@ function AppContent() {
                 selectedDate={selectedDate}
                 selectedEndDate={selectedEndDate}
                 currentTime={currentTime}
+                canEdit={canEdit}
                 onStartDowntime={startDowntime}
                 onFinishDowntime={(machineId, reasonName) => finishDowntime(machineId, reasonName)}
                 onClick={setSelectedMachineForDetail}

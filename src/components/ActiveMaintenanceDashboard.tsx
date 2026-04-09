@@ -77,7 +77,7 @@ export const ActiveMaintenanceDashboard: React.FC<ActiveMaintenanceDashboardProp
             const isSelected = selectedReasons.includes(reason.name);
             return (
               <button
-                key={`filter-reason-${reason.id || idx}`}
+                key={`filter-reason-${reason.id || `idx-${idx}`}`}
                 onClick={() => toggleReason(reason.name)}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border-2 flex items-center gap-1.5",
@@ -114,7 +114,7 @@ export const ActiveMaintenanceDashboard: React.FC<ActiveMaintenanceDashboardProp
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {activeMaintenanceMachines.map((machine, idx) => (
             <OperatorMachineCard 
-              key={`active-maint-${machine.id}-${idx}`}
+              key={`active-maint-${machine.id || `idx-${idx}`}`}
               machine={machine}
               machineIdx={idx}
               downtime={downtime}
@@ -123,6 +123,7 @@ export const ActiveMaintenanceDashboard: React.FC<ActiveMaintenanceDashboardProp
               production={production}
               currentTime={currentTime}
               reasons={reasons}
+              canEdit={isAuthenticated}
               onFinishDowntime={onFinishDowntime}
               onStartDowntime={onStartDowntime}
               onClick={onClick}

@@ -29,7 +29,7 @@ interface MachineRowProps {
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
-  isAuthenticated: boolean;
+  canEdit: boolean;
   onClick: (machine: Machine) => void;
   onEditRecord: (type: 'production' | 'downtime', record: any) => void;
 }
@@ -41,7 +41,7 @@ export const MachineRow: React.FC<MachineRowProps> = ({
   currentTime,
   production, 
   downtime,
-  isAuthenticated,
+  canEdit,
   onClick,
   onEditRecord
 }) => {
@@ -158,6 +158,10 @@ export const MachineRow: React.FC<MachineRowProps> = ({
                 <button
                   key={`${seg.id}-${idx}`}
                   onClick={() => {
+                    if (!canEdit) {
+                      alert("Você não tem permissão para realizar esta ação.");
+                      return;
+                    }
                     if (seg.type !== 'empty' && seg.record) {
                       onEditRecord(seg.type, seg.record);
                     }

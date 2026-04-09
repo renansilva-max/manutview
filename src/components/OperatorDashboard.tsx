@@ -14,6 +14,7 @@ interface OperatorDashboardProps {
   selectedDate: string;
   selectedEndDate?: string;
   currentTime: string;
+  canEdit: boolean;
   onStartDowntime: (machineId: string, reason: string) => void;
   onFinishDowntime: (machineId: string, reasonName?: string) => void;
   onClick?: (machine: Machine) => void;
@@ -28,6 +29,7 @@ export function OperatorDashboard({
   selectedDate,
   selectedEndDate,
   currentTime,
+  canEdit,
   onStartDowntime,
   onFinishDowntime,
   onClick
@@ -42,6 +44,7 @@ export function OperatorDashboard({
     production,
     currentTime,
     reasons,
+    canEdit,
     onFinishDowntime,
     onStartDowntime,
     onClick,
@@ -86,7 +89,7 @@ export function OperatorDashboard({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {machines.map((machine, machineIdx) => (
             <OperatorMachineCard 
-              key={`machine-view-${machine.id || machineIdx}-${machineIdx}`} 
+              key={`machine-view-${machine.id || `idx-${machineIdx}`}`} 
               machine={machine} 
               machineIdx={machineIdx} 
               {...commonProps}
@@ -117,7 +120,7 @@ export function OperatorDashboard({
             ).length;
 
             return (
-              <div key={`line-group-${line.id || lineIdx}`} className="space-y-4">
+              <div key={`line-group-${line.id || `idx-${lineIdx}`}`} className="space-y-4">
                 <div 
                   onClick={() => setExpandedLineId(isExpanded ? null : line.id)}
                   className={cn(
@@ -183,9 +186,13 @@ export function OperatorDashboard({
 
                         return (
                           <button 
-                            key={`line-reason-${line.id}-${reason.id}-${idx}`}
+                            key={`line-reason-${line.id}-${reason.id || `idx-${idx}`}`}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (!canEdit) {
+                                alert("Você não tem permissão para realizar esta ação.");
+                                return;
+                              }
                               if (isAllStopped) {
                                 lineMachines.forEach(m => onFinishDowntime(m.id, reason.name));
                               } else {
@@ -243,7 +250,7 @@ export function OperatorDashboard({
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pl-4 border-l-4 border-emerald-500/20 py-2">
                     {lineMachines.map((machine, machineIdx) => (
                       <OperatorMachineCard 
-                        key={`expanded-machine-${line.id}-${machine.id || machineIdx}`} 
+                        key={`expanded-machine-${line.id}-${machine.id || `idx-${machineIdx}`}`} 
                         machine={machine} 
                         machineIdx={machineIdx} 
                         isCompact={true} 

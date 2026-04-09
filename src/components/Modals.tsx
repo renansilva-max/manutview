@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome, Wrench, Upload, Database, Plus } from 'lucide-react';
+import { X, Trash2, Edit2, FileText, Download, Filter, Calendar as CalendarIcon, Settings, Check, LogIn, Lock, Chrome, Wrench, Upload, Database, Plus, AlertCircle } from 'lucide-react';
 import { auth, googleProvider, signInWithPopup } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Machine, ProductionRecord, DowntimeRecord, MachineStats, DowntimeReason, AuditLog } from '../types';
@@ -255,17 +255,23 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isManualLoading, setIsManualLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsManualLoading(true);
     
+    // Artificial delay for better UX (feedback that something is happening)
+    await new Promise(resolve => setTimeout(resolve, 800));
+
     const cleanUsername = username.toLowerCase().trim();
     
     // Fallback for viewhering
     if (cleanUsername === 'viewhering' && password === 'viewhering') {
       onLogin('viewhering@manual.com');
       onClose();
+      setIsManualLoading(false);
       return;
     }
 
@@ -292,10 +298,11 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
         if (userExists) {
           setError('Senha incorreta.');
         } else {
-          setError('Usuário não cadastrado.');
+          setError('Usuário não cadastrado ou senha inválida.');
         }
       }
     }
+    setIsManualLoading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -305,25 +312,20 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
       const result = await signInWithPopup(auth, googleProvider);
       const email = result.user.email?.toLowerCase();
       
-      const allowedEmails = ['ciaheringgoianesia@gmail.com', 'renan.silva@ciahering.com.br'];
-      const isRegistered = (users || []).some((u: any) => u && u.email && u.email.toLowerCase() === email) || allowedEmails.includes(email || '');
-      
-      if (!isRegistered) {
-        await auth.signOut();
-        setError('Usuário não cadastrado.');
-      } else {
-        onClose();
-      }
+      onLogin(email);
+      onClose();
     } catch (err: any) {
       console.error('Login error:', err);
       if (err.code === 'auth/popup-blocked') {
-        setError('O pop-up foi bloqueado pelo seu navegador. Por favor, permita pop-ups para este site.');
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        setError('O login foi cancelado ou o pop-up foi fechado antes de completar.');
+        setError('O pop-up foi bloqueado. Por favor, permita pop-ups ou abra o app em uma nova aba.');
+      } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
+        setError('O login foi cancelado. Tente novamente clicando no botão.');
       } else if (err.code === 'auth/unauthorized-domain') {
-        setError('Este domínio não está autorizado para login. Verifique as configurações do Firebase.');
+        setError('Domínio não autorizado. Verifique as configurações do Firebase.');
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Erro de rede. Verifique sua conexão.');
       } else {
-        setError(`Erro ao fazer login: ${err.message || 'Tente novamente.'}`);
+        setError(`Erro: ${err.message || 'Falha ao autenticar.'}`);
       }
     } finally {
       setIsLoading(false);
@@ -332,86 +334,89 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
 
   return (
     isOpen && (
-      <Modal title="Acesso Restrito" onClose={isMandatory ? undefined : onClose}>
+      <Modal title="Acesso ao Sistema" onClose={isMandatory ? undefined : onClose}>
         <div className="space-y-6">
             <div className="flex justify-center">
-              <div className="bg-slate-100 p-4 rounded-full">
-                <Lock className="w-8 h-8 text-slate-400" />
+              <div className="bg-emerald-100 p-4 rounded-full">
+                <Lock className="w-8 h-8 text-emerald-600" />
               </div>
             </div>
 
             <div className="text-center space-y-2">
-              <h3 className="font-bold text-slate-800">Login com Google</h3>
-              <p className="text-xs text-slate-500">Obrigatório para salvar dados na nuvem e sincronizar entre dispositivos.</p>
+              <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Identifique-se</h3>
+              <p className="text-xs text-slate-500 font-medium">Escolha uma das formas de acesso abaixo para continuar.</p>
             </div>
 
             <div className="space-y-3">
               <button 
                 onClick={handleGoogleLogin}
-                disabled={isLoading}
-                className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                disabled={isLoading || isManualLoading}
+                className="w-full py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-2xl font-bold hover:border-emerald-500 hover:text-emerald-600 transition-all flex items-center justify-center gap-3 disabled:opacity-50 group"
               >
-                <Chrome className="w-5 h-5 text-blue-500" />
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Chrome className="w-5 h-5 text-blue-500 group-hover:scale-110 transition-transform" />
+                )}
                 {isLoading ? 'Conectando...' : 'Entrar com Google'}
               </button>
               
-              <p className="text-[10px] text-slate-400 text-center leading-tight">
-                Se o login Google falhar, tente abrir o app em uma <strong>nova aba</strong> ou verifique se o bloqueador de pop-ups está ativo.
+              <p className="text-[10px] text-slate-400 text-center leading-tight px-4">
+                Recomendado para sincronização automática. Se falhar, tente abrir em uma <strong>nova aba</strong>.
               </p>
-              
-              {isLoading && (
-                <p className="text-[10px] text-slate-400 text-center animate-pulse">
-                  Verifique se uma janela de login abriu no seu navegador.
-                </p>
-              )}
             </div>
 
             {error && (
-              <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
-                <p className="text-xs font-bold text-rose-500 text-center">{error}</p>
-              </div>
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-rose-50 rounded-xl border border-rose-100 flex items-center gap-2"
+              >
+                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                <p className="text-xs font-bold text-rose-600">{error}</p>
+              </motion.div>
             )}
 
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200"></div>
+                <div className="w-full border-t border-slate-100"></div>
               </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-slate-400 font-bold">Ou entrar com usuário e senha</span>
+              <div className="relative flex justify-center text-[10px] uppercase">
+                <span className="bg-white px-3 text-slate-400 font-black tracking-widest">Ou use credenciais</span>
               </div>
             </div>
             
-            <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
-              <p className="text-[10px] text-blue-700 font-medium leading-tight">
-                <strong>Acesso Restrito:</strong> Apenas usuários previamente cadastrados pelo administrador podem acessar o sistema.
-              </p>
-            </div>
-
             <form onSubmit={handleSubmit} className="space-y-4">
-              {users.length === 0 && (
-                <p className="text-[10px] text-amber-600 font-bold text-center bg-amber-50 p-2 rounded-lg border border-amber-100">
-                  Sincronizando lista de usuários... Aguarde um instante.
-                </p>
+              {users.length === 0 && !isManualLoading && (
+                <div className="flex items-center justify-center gap-2 p-2 bg-amber-50 rounded-lg border border-amber-100">
+                  <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-[10px] text-amber-700 font-bold">Sincronizando usuários...</p>
+                </div>
               )}
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Usuário</label>
-                <input 
-                  type="text" 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="Ex: nome.sobrenome"
-                  required
-                />
+              
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Usuário / Email</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={isLoading || isManualLoading}
+                    className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-emerald-500 focus:bg-white transition-all outline-none text-sm font-medium"
+                    placeholder="nome.sobrenome"
+                    required
+                  />
+                </div>
               </div>
               
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Senha</label>
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black text-slate-400 uppercase ml-1">Senha</label>
                 <input 
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
+                  disabled={isLoading || isManualLoading}
+                  className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-transparent focus:border-emerald-500 focus:bg-white transition-all outline-none text-sm font-medium"
                   placeholder="••••••••"
                   required
                 />
@@ -419,12 +424,21 @@ export function LoginModal({ isOpen, onClose, onLogin, users, isMandatory }: any
 
               <button 
                 type="submit"
-                className="w-full py-4 bg-brand-primary text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+                disabled={isLoading || isManualLoading}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg shadow-slate-200 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                <LogIn className="w-5 h-5" />
-                Entrar
+                {isManualLoading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <LogIn className="w-5 h-5" />
+                )}
+                {isManualLoading ? 'Validando...' : 'Entrar no Sistema'}
               </button>
             </form>
+
+            <p className="text-[9px] text-slate-400 text-center uppercase font-bold tracking-tighter">
+              Acesso restrito a colaboradores autorizados
+            </p>
           </div>
         </Modal>
     )
@@ -558,7 +572,7 @@ export function MachineManagementModal({ isOpen, machines, productionLines, onCl
                 >
                   <option value="" disabled>Selecione uma linha</option>
                   {productionLines.map((l: any, idx: number) => (
-                    <option key={`${l.id}-${idx}`} value={l.id}>{l.name}</option>
+                    <option key={`mgmt-line-opt-${l.id || idx}`} value={l.id}>{l.name}</option>
                   ))}
                 </select>
               </div>
@@ -623,7 +637,7 @@ export function MachineManagementModal({ isOpen, machines, productionLines, onCl
                     className="w-full bg-white border border-slate-200 rounded px-2 py-0.5 text-xs font-bold text-slate-600 focus:ring-1 focus:ring-emerald-500"
                   >
                     {productionLines.map((l: any, idx: number) => (
-                      <option key={`${l.id}-${idx}`} value={l.id}>{l.name}</option>
+                      <option key={`mgmt-line-list-opt-${l.id || idx}`} value={l.id}>{l.name}</option>
                     ))}
                   </select>
                 </div>
@@ -677,7 +691,7 @@ export function FilterModal({ isOpen, lines, selectedLineIds, onClose, onToggleL
           <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
             {lines.map((line: any, idx: number) => (
               <button 
-                key={`${line.id}-${idx}`}
+                key={`filter-line-${line.id || idx}`}
                 onClick={() => onToggleLine(line.id)}
                 className={cn(
                   "w-full flex items-center justify-between p-3 rounded-xl transition-all border-2",
@@ -782,7 +796,7 @@ function DowntimeReasonRow({ reason, onUpdate, onDelete }: any) {
             <div className="flex gap-2 flex-wrap p-2 bg-white rounded-xl border border-slate-100">
               {colors.map((c, idx) => (
                 <button 
-                  key={`${c}-${idx}`}
+                  key={`edit-reason-color-${idx}`}
                   onClick={() => {
                     onUpdate(reason.id, { color: c });
                     setShowColorPicker(false);
@@ -866,7 +880,7 @@ export function DowntimeReasonManagementModal({ isOpen, reasons, onClose, onAdd,
                     <div className="flex gap-2 flex-wrap p-3 bg-white rounded-2xl border border-slate-100 shadow-inner">
                       {colors.map((c, idx) => (
                         <button 
-                          key={`${c}-${idx}`}
+                          key={`new-reason-color-${idx}`}
                           onClick={() => {
                             setNewColor(c);
                             setShowColorPicker(false);
@@ -943,7 +957,7 @@ export function ProductionModal({ isOpen, machines, date, editingData, onClose, 
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-emerald-500"
               >
-                {sortedMachines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
+                {sortedMachines.map((m: Machine, idx: number) => <option key={`prod-machine-opt-${m.id || idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1067,7 +1081,7 @@ export function DowntimeModal({ isOpen, machines, date, reasons, editingData, on
                 onChange={(e) => setMachineId(e.target.value)}
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-rose-500"
               >
-                {sortedMachines.map((m: Machine, idx: number) => <option key={`${m.id}-${idx}`} value={m.id}>{m.name}</option>)}
+                {sortedMachines.map((m: Machine, idx: number) => <option key={`down-machine-opt-${m.id || idx}`} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1098,7 +1112,7 @@ export function DowntimeModal({ isOpen, machines, date, reasons, editingData, on
                 className="w-full px-4 py-3 bg-slate-100 rounded-xl border-none focus:ring-2 focus:ring-rose-500"
               >
                 {reasons?.map((reason: any, idx: number) => (
-                  <option key={`${reason.id}-${idx}`} value={reason.name}>{reason.name}</option>
+                  <option key={`down-reason-opt-${reason.id || idx}`} value={reason.name}>{reason.name}</option>
                 ))}
                 {!reasons?.length && (
                   <>
@@ -1284,7 +1298,7 @@ export function MachineDetailModal({
                 machineProd.length > 0 ? (
                   machineProd.map((p: ProductionRecord, idx: number) => (
                     <div 
-                      key={`detail-prod-${p.id}-${idx}`} 
+                      key={`detail-prod-${p.id || `idx-${idx}`}`} 
                       onClick={() => isAuthenticated && onEditProduction(p)}
                       className={cn(
                         "p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group transition-all",
@@ -1326,7 +1340,7 @@ export function MachineDetailModal({
                 machineDown.length > 0 ? (
                   machineDown.map((d: DowntimeRecord, idx: number) => (
                     <div 
-                      key={`detail-down-${d.id}-${idx}`} 
+                      key={`detail-down-${d.id || `idx-${idx}`}`} 
                       onClick={() => isAuthenticated && onEditDowntime(d)}
                       className={cn(
                         "p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center group transition-all",
@@ -1644,9 +1658,9 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
                   </div>
                 </div>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                  {productionLines.map((line: any) => (
+                  {productionLines.map((line: any, idx: number) => (
                     <button 
-                      key={`report-line-${line.id}`}
+                      key={`report-line-${line.id || `idx-${idx}`}`}
                       onClick={() => toggleLine(line.id)}
                       className={cn(
                         "w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left",
@@ -1671,9 +1685,9 @@ export function ReportModal({ isOpen, machines, productionLines, production, dow
                   </div>
                 </div>
                 <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                  {filteredMachinesForSelection.map((m: any) => (
+                  {filteredMachinesForSelection.map((m: any, idx: number) => (
                     <button 
-                      key={`report-machine-${m.id}`}
+                      key={`report-machine-${m.id || `idx-${idx}`}`}
                       onClick={() => toggleMachine(m.id)}
                       className={cn(
                         "w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left",

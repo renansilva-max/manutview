@@ -14,6 +14,7 @@ interface OperatorMachineCardProps {
   production: ProductionRecord[];
   currentTime: string;
   reasons: DowntimeReason[];
+  canEdit: boolean;
   onFinishDowntime: (machineId: string, reasonName?: string) => void;
   onStartDowntime: (machineId: string, reason: string) => void;
   onClick?: (machine: Machine) => void;
@@ -33,6 +34,7 @@ export const OperatorMachineCard: React.FC<OperatorMachineCardProps> = ({
   production,
   currentTime,
   reasons,
+  canEdit,
   onFinishDowntime,
   onStartDowntime,
   onClick,
@@ -162,9 +164,13 @@ export const OperatorMachineCard: React.FC<OperatorMachineCardProps> = ({
 
               return (
                 <div 
-                  key={`active-${machine.id}-${active.id || activeIdx}`}
+                  key={`active-${machine.id}-${active.id || `idx-${activeIdx}`}`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!canEdit) {
+                      alert("Você não tem permissão para realizar esta ação.");
+                      return;
+                    }
                     onFinishDowntime(machine.id, active.type);
                   }}
                   className={cn(
@@ -240,9 +246,13 @@ export const OperatorMachineCard: React.FC<OperatorMachineCardProps> = ({
 
               return (
                 <button 
-                  key={`operator-reason-${machine.id}-${reason.id || reasonIdx}`}
+                  key={`operator-reason-${machine.id}-${reason.id || `idx-${reasonIdx}`}`}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!canEdit) {
+                      alert("Você não tem permissão para realizar esta ação.");
+                      return;
+                    }
                     if (isActive) {
                       onFinishDowntime(machine.id, reason.name);
                     } else {

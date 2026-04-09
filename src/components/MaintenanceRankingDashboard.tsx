@@ -90,7 +90,7 @@ export const MaintenanceRankingDashboard: React.FC<MaintenanceRankingDashboardPr
             const isSelected = selectedReasons.includes(reason.name);
             return (
               <button
-                key={`filter-reason-${reason.id || idx}`}
+                key={`filter-reason-${reason.id || `idx-${idx}`}`}
                 onClick={() => toggleReason(reason.name)}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border-2 flex items-center gap-1.5",
@@ -131,7 +131,7 @@ export const MaintenanceRankingDashboard: React.FC<MaintenanceRankingDashboardPr
       <div className="grid grid-cols-1 gap-4">
         {rankedMachines.map((m, idx) => (
           <div 
-            key={`ranking-${m.id}-${idx}`}
+            key={`ranking-${m.id || `idx-${idx}`}`}
             onClick={() => onClick?.(m)}
             className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:shadow-md transition-all group cursor-pointer"
           >

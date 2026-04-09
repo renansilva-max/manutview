@@ -29,7 +29,7 @@ interface MachineCardProps {
   currentTime: string;
   production: ProductionRecord[];
   downtime: DowntimeRecord[];
-  isAuthenticated: boolean;
+  canEdit: boolean;
   onStartDowntime: () => void;
   onFinishDowntime: () => void;
   onClick: (machine: Machine) => void;
@@ -42,7 +42,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
   currentTime,
   production, 
   downtime,
-  isAuthenticated,
+  canEdit,
   onStartDowntime,
   onFinishDowntime,
   onClick
@@ -191,6 +191,10 @@ export const MachineCard: React.FC<MachineCardProps> = ({
         <div 
           onClick={(e) => {
             e.stopPropagation();
+            if (!canEdit) {
+              alert("Você não tem permissão para realizar esta ação.");
+              return;
+            }
             onFinishDowntime();
           }}
           className="mx-5 mb-5 p-4 bg-rose-50 border-2 border-rose-500 rounded-2xl flex flex-col gap-1 cursor-pointer hover:scale-[1.02] transition-transform active:scale-95 group/timer"
@@ -213,7 +217,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({
       )}
 
       {/* Actions */}
-      {isAuthenticated && (
+      {canEdit && (
         <div className="px-5 pb-5 flex gap-2" onClick={(e) => e.stopPropagation()}>
           {!isActiveDowntime ? (
             <button 
